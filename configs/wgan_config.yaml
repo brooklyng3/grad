@@ -1,0 +1,27 @@
+wgan:
+  latent_dim: 32
+  feature_dim: 100
+  generator_hidden_dims: [128, 256, 128]
+  critic_hidden_dims: [128, 256, 128]
+  lambda_gp: 10.0
+  n_critic: 5
+  lr_g: 0.0001
+  lr_c: 0.0001
+  b1: 0.5
+  b2: 0.9
+
+perturbation:
+  eps_linf: 0.05
+  delta_l2: 1.0
+  max_iterations: 100
+  step_size: 0.01
+
+data:
+  processed_features: "data/processed/mirai_features.npy"
+  labels: "data/raw/mirai_labels.csv"
+  output_samples: "data/attack_samples/perturbed_mirai.npy"
+
+training:
+  batch_size: 128
+  epochs: 50
+  device: "cuda"

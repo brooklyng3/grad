@@ -1,0 +1,37 @@
+
+# Large Dataset & Feature Files (Do not index or read into LLM context)
+*.pcap
+*.pcapng
+*.tsv
+*.csv
+mirai.pcap
+mirai.pcap.tsv
+mirai_labels.csv
+
+# Serialized Models & Checkpoints
+*.pkl
+*.pt
+*.pth
+*.onnx
+*.h5
+*.npy
+*.npz
+kitsune_mirai_model.pkl
+
+# Python & Cython Build Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.c
+build/
+dist/
+*.egg-info/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Screenshots and prompt images
+img/

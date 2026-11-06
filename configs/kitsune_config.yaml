@@ -1,0 +1,19 @@
+kitsune:
+  feature_dim: 100
+  max_ae: 10
+  fm_grace: 5000
+  ad_grace: 50000
+  threshold_percentile: 99.9
+  learning_rate: 0.1
+  hidden_ratio: 0.75
+
+data:
+  raw_pcap: "data/raw/mirai.pcap"
+  raw_tsv: "data/raw/mirai.pcap.tsv"
+  raw_labels: "data/raw/mirai_labels.csv"
+  processed_features: "data/processed/mirai_features.npy"
+  model_weights: "data/processed/kitsune_mirai_model.pkl"
+  packet_limit: null
+
+device: "cuda"
+batch_size: 128
