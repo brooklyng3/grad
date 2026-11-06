@@ -14,6 +14,9 @@ This document provides a high-level executive summary of the dataset feature ext
 4. **Isolated Neural Network Persistence:** Successfully serialized only the trained neural ensemble (`KitNET`) to `data/processed/kitsune_mirai_model.pkl` (187.36 KB), guaranteeing no unpicklable file handles or parser states.
 5. **Differentiable PyTorch CUDA Verification:** Validated that `PyTorchKitNET.from_file()` loads the trained model onto CUDA and performs high-throughput mini-batch forward passes ($128$ samples/batch) yielding exact parity with NumPy inference ($0.009949$).
 
+6. **Global Normalization Bounds Extraction (`get_global_feature_bounds`):** Implemented utility inside `PyTorchKitNET` to reassemble individual micro-autoencoder `norm_min` and `norm_max` vectors into global 100-dimensional bounds mapped by `kitnet.v`. This provides exact dynamic range vectors $\mathbf{s} = \mathbf{norm\_max} - \mathbf{norm\_min}$ for Phase 3 perturbation scaling.
+7. **Grace Period Threshold Safeguard (Phase 2 Pre-Condition):** Established explicit rule that the first 55,000 packets (`FMgrace + ADgrace`) must be excluded from threshold calibration. Only post-convergence benign packets ($i \ge 55,000$, yielding 66,621 clean packets) will be used to calibrate $\theta = \text{percentile}(\text{benign\_rmses}, 99.9)$, preventing artificial $0.0$ scores and early SGD fluctuations from distorting the alert threshold.
+
 ---
 
 ## 2. Artifacts Produced

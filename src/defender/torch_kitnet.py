@@ -199,3 +199,45 @@ class PyTorchKitNET(nn.Module):
         # 2. Output Layer execution
         final_rmse, _ = self.output_layer(s_l1)
         return final_rmse
+
+    def get_global_feature_bounds(self, as_torch: bool = True) -> Tuple[
+        Union[torch.Tensor, np.ndarray],
+        Union[torch.Tensor, np.ndarray],
+        Union[torch.Tensor, np.ndarray],
+    ]:
+        """Reconstructs global 100-dimensional norm_min, norm_max, and scales.
+
+        Reassembles the individual micro-autoencoder normalization bounds back into
+        full 100-dimensional vectors mapped by self.v. Used by Phase 3 perturbation
+        engines (FGSM, DeepFool, WGAN-GP) to enforce feature ranges and scale budgets.
+
+        Args:
+            as_torch: If True, returns torch.Tensors on self.device; else np.ndarrays.
+
+        Returns:
+            Tuple of (norm_min, norm_max, scales) where scales = norm_max - norm_min.
+        """
+        # Determine total feature dimension from self.v
+        n_features = sum(len(sub) for sub in self.v)
+        global_min = torch.zeros(n_features, dtype=torch.float32, device=self.device)
+        global_max = torch.zeros(n_features, dtype=torch.float32, device=self.device)
+
+        for a_idx, dae in enumerate(self.ensemble):
+            cluster_indices = torch.tensor(
+                self.v[a_idx], dtype=torch.long, device=self.device
+            )
+            # Reconstruct dae norm_max from norm_min + norm_range
+            dae_min = dae.norm_min
+            dae_max = dae.norm_min + dae.norm_range
+            global_min.index_copy_(0, cluster_indices, dae_min)
+            global_max.index_copy_(0, cluster_indices, dae_max)
+
+        scales = torch.clamp(global_max - global_min, min=1e-12)
+
+        if not as_torch:
+            return (
+                global_min.cpu().numpy(),
+                global_max.cpu().numpy(),
+                scales.cpu().numpy(),
+            )
+        return global_min, global_max, scales

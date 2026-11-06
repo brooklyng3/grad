@@ -121,3 +121,36 @@ Device: cuda
 ```
 - Parity Check: NumPy `kitnet.execute(features[100000])` yielded `0.009949344235095484`.
 - Difference between PyTorch GPU float32 and NumPy CPU float64: $< 5 \times 10^{-9}$ (exact numerical equivalence).
+
+---
+
+## 6. Mathematical Invariants & Phase 2/3 Preparatory Architecture
+
+### 6.1. Grace Period Exclusion for Threshold Calibration ($\theta$)
+An empirical audit of `data/raw/mirai_labels.csv` revealed:
+- **Total Packets:** 764,137
+- **Total Benign Packets:** 121,621 (indices `0` to `121,620`)
+- **First Attack Packet Index:** `121,621` (Mirai attack commences)
+- **Total Malicious Packets:** 642,516 (indices `121,621` to `764,136`)
+
+**Critical Calibration Rule:**
+During the initial 55,000 packets (`FMgrace=5000` + `ADgrace=50000`), the model is actively learning:
+- Packets 0 to 4,999 return $\text{RMSE} = 0.0$ (clustering mode).
+- Packets 5,000 to 54,999 experience continuous stochastic weight updates where reconstruction error is non-stationary.
+Including these 55,000 packets would severely skew the empirical cumulative distribution and artificially suppress the 99.9th percentile threshold $\theta$.
+Therefore, Phase 2 threshold calibration is strictly defined over the **post-convergence benign subset**:
+$$\mathcal{D}_{\text{cal}} = \{ \mathbf{x}_i \mid \text{label}_i = 0 \land i \ge 55,000 \} \quad (|\mathcal{D}_{\text{cal}}| = 66,621 \text{ packets})$$
+$$\theta = \text{percentile}(\{ \text{RMSE}(\mathbf{x}) \mid \mathbf{x} \in \mathcal{D}_{\text{cal}} \}, 99.9)$$
+
+### 6.2. Global Normalization Feature Bounds (`get_global_feature_bounds`)
+Each micro-autoencoder $a \in \{0, \dots, 15\}$ maintains localized normalization vectors:
+$$\mathbf{norm\_min}^{(a)}, \mathbf{norm\_max}^{(a)} \in \mathbb{R}^{d_a} \quad \text{where } \sum_{a=0}^{15} d_a = 100$$
+To enable global feature budgeting for Phase 3 attack generators without data leakage, `PyTorchKitNET` provides `get_global_feature_bounds()`:
+$$\mathbf{norm\_min}_{\text{global}}[v_a] = \mathbf{norm\_min}^{(a)}$$
+$$\mathbf{norm\_max}_{\text{global}}[v_a] = \mathbf{norm\_max}^{(a)}$$
+$$\mathbf{s}_{\text{global}} = \max(\mathbf{norm\_max}_{\text{global}} - \mathbf{norm\_min}_{\text{global}}, 10^{-12})$$
+Validation confirmed:
+- Zero-scale count: $0$ (every feature has positive variance).
+- Min scale: $1.5743$.
+- Max scale: $977,758.44$.
+This allows Phase 3 perturbation bounds ($\epsilon \cdot \mathbf{s}$) to directly match the normalized input space of KitNET's autoencoders.
