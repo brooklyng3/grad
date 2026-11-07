@@ -39,12 +39,14 @@ Evaluated across two distinct attack regimes on $1,000$ confirmed detected Mirai
 | Paradigm / Attack | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) | Mean $L_\infty$ | Latency (ms / 1k pkts) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Clean Baseline** | None (Unperturbed) | $3.7961$ | $0.00\%$ | $11.85\%$ | $0.0000$ | $0.0\text{ ms}$ |
-| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $3.7664$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $284.4\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $3.7664$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $284.4\text{ ms}^*$ |
 | **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $3.6568$ | $0.10\%$ | $11.94\%$ | $0.2500$ | $35.2\text{ ms}$ |
 | **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | $2.6743$ | $7.20\%$ | $18.19\%$ | $1.9968$ | $1674.6\text{ ms}$ |
 | **Multi-Step PGD (Manifold)** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.0845$** | **$100.00\%$** | **$100.00\%$** | $8.8060$ | $1513.7\text{ ms}$ |
 | **Polymorphic WGAN-GP (Box)** | $\epsilon = 2.0 \cdot \mathbf{s}$, closed loop | $2.9508$ | $0.00\%$ | $11.85\%$ | $1.9999$ | $19.4\text{ ms}$ |
 | **Polymorphic WGAN-GP (Manifold)** | Envelope Shaping, single pass | **$0.2275$** | **$100.00\%$** | **$100.00\%$** | $9.5688$ | **$1.5\text{ ms}$** |
+
+*\*Note on FGSM ($\epsilon = 0.05$) Latency:* The first FGSM call includes one-time PyTorch autograd engine initialization, cuBLAS lazy context allocation, and backward CUDA kernel warm-up overhead (~$250\text{ ms}$). Steady-state single-step FGSM latency across subsequent runs is ~$\mathbf{35-37\text{ ms}}$ (as evidenced by $\epsilon = 0.25$ taking $35.2\text{ ms}$ and Phase B taking $36.8\text{ ms}$).
 
 ---
 

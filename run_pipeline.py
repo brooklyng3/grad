@@ -530,9 +530,13 @@ def evaluate_attack_suite(
         "Latency (ms / 1k pkts)",
     ]
 
-    # Warmup GPU
+    # Warmup GPU (both forward inference and autograd backward kernels)
     with torch.no_grad():
         _ = torch_model(mal_detected[:10])
+    _warm_x = mal_detected[:2].clone().detach().requires_grad_(True)
+    _warm_loss = torch_model(_warm_x).sum()
+    _warm_loss.backward()
+    del _warm_x, _warm_loss
     if device.type == "cuda":
         torch.cuda.synchronize()
 
