@@ -67,6 +67,9 @@ Where:
 
 ### 4.2. Comparative Robustness Matrix (Evaluated on 1,000 Holdout Detected Attacks)
 
+> [!NOTE]
+> **Dataset Sampling Scope:** The 1,000 detected attack samples evaluated in this Phase 4 benchmark matrix were drawn from the initial onset of the Mirai attack ($i \approx 121,621$ to $123,000$, representing the initial host probing and scanning onset, baseline $\text{RMSE}_{\text{orig}} = 1.6798$). In Phase 5, the evaluation suite expands to benchmark both an extended reconnaissance scanning window ($i \in [121,621, 131,621]$, baseline $\text{RMSE} = 3.7961$) and the subsequent massive volumetric flooding regime ($i \ge 130,000$, baseline $\text{RMSE} = 13.5061$).
+
 | Method | Perturbation Paradigm | Mean Attack RMSE | $\text{ASR}_{\text{cond}}$ | $\text{ER}_{\text{total}}$ | Mean $L_\infty$ |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Unperturbed Clean** | None | $1.6798$ | $0.00\%$ | $11.85\%$ | $0.000$ |

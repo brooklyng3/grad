@@ -527,7 +527,14 @@ def evaluate_attack_suite(
         "Conditional ASR (%)",
         "Overall Evasion Rate (%)",
         "Mean Linf",
+        "Latency (ms / 1k pkts)",
     ]
+
+    # Warmup GPU
+    with torch.no_grad():
+        _ = torch_model(mal_detected[:10])
+    if device.type == "cuda":
+        torch.cuda.synchronize()
 
     # 1. Clean unperturbed
     clean_eval = evaluator.evaluate_evasion(
@@ -544,16 +551,24 @@ def evaluate_attack_suite(
             f"{clean_eval['conditional_asr_pct']:.2f}%",
             f"{clean_eval['overall_evasion_rate_pct']:.2f}%",
             0.0000,
+            "0.0 ms",
         ]
     )
 
     # 2. FGSM eps=0.05
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t0 = time.perf_counter()
     x_fgsm_05, _ = fgsm_attack(
         model=torch_model,
         x=mal_detected,
         eps=0.05,
         scales=evaluator.scales,
     )
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t_fgsm_05 = (time.perf_counter() - t0) * 1000.0
+
     fgsm_05_eval = evaluator.evaluate_evasion(
         x_orig=mal_detected,
         x_adv=x_fgsm_05,
@@ -568,16 +583,24 @@ def evaluate_attack_suite(
             f"{fgsm_05_eval['conditional_asr_pct']:.2f}%",
             f"{fgsm_05_eval['overall_evasion_rate_pct']:.2f}%",
             fgsm_05_eval["perturbation_distances"]["mean_linf"],
+            f"{t_fgsm_05:.1f} ms",
         ]
     )
 
     # 3. FGSM eps=0.25
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t0 = time.perf_counter()
     x_fgsm_25, _ = fgsm_attack(
         model=torch_model,
         x=mal_detected,
         eps=0.25,
         scales=evaluator.scales,
     )
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t_fgsm_25 = (time.perf_counter() - t0) * 1000.0
+
     fgsm_25_eval = evaluator.evaluate_evasion(
         x_orig=mal_detected,
         x_adv=x_fgsm_25,
@@ -592,10 +615,14 @@ def evaluate_attack_suite(
             f"{fgsm_25_eval['conditional_asr_pct']:.2f}%",
             f"{fgsm_25_eval['overall_evasion_rate_pct']:.2f}%",
             fgsm_25_eval["perturbation_distances"]["mean_linf"],
+            f"{t_fgsm_25:.1f} ms",
         ]
     )
 
     # 4. Multi-Step PGD (50 steps, Box eps=2.0)
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t0 = time.perf_counter()
     x_pgd, _ = pgd_attack(
         model=torch_model,
         x=mal_detected,
@@ -608,6 +635,10 @@ def evaluate_attack_suite(
         norm_min=evaluator.norm_min,
         norm_max=evaluator.norm_max,
     )
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t_pgd = (time.perf_counter() - t0) * 1000.0
+
     pgd_eval = evaluator.evaluate_evasion(
         x_orig=mal_detected,
         x_adv=x_pgd,
@@ -622,10 +653,14 @@ def evaluate_attack_suite(
             f"{pgd_eval['conditional_asr_pct']:.2f}%",
             f"{pgd_eval['overall_evasion_rate_pct']:.2f}%",
             pgd_eval["perturbation_distances"]["mean_linf"],
+            f"{t_pgd:.1f} ms",
         ]
     )
 
     # 5. Multi-Step PGD (50 steps, Manifold Shaping)
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t0 = time.perf_counter()
     x_manifold, _ = pgd_attack(
         model=torch_model,
         x=mal_detected,
@@ -638,6 +673,10 @@ def evaluate_attack_suite(
         norm_min=evaluator.norm_min,
         norm_max=evaluator.norm_max,
     )
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    t_manifold = (time.perf_counter() - t0) * 1000.0
+
     manifold_eval = evaluator.evaluate_evasion(
         x_orig=mal_detected,
         x_adv=x_manifold,
@@ -652,6 +691,7 @@ def evaluate_attack_suite(
             f"{manifold_eval['conditional_asr_pct']:.2f}%",
             f"{manifold_eval['overall_evasion_rate_pct']:.2f}%",
             manifold_eval["perturbation_distances"]["mean_linf"],
+            f"{t_manifold:.1f} ms",
         ]
     )
 
@@ -669,10 +709,17 @@ def evaluate_attack_suite(
             torch.load(ckpt_additive, map_location=device, weights_only=True)
         )
         gen_add.eval()
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
         with torch.no_grad():
             x_wgan_add = gen_add.mutate_raw(
                 mal_detected, evaluator.norm_min, evaluator.scales, mode="additive"
             )
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t_wgan_add = (time.perf_counter() - t0) * 1000.0
 
         wgan_add_eval = evaluator.evaluate_evasion(
             x_orig=mal_detected,
@@ -688,6 +735,7 @@ def evaluate_attack_suite(
                 f"{wgan_add_eval['conditional_asr_pct']:.2f}%",
                 f"{wgan_add_eval['overall_evasion_rate_pct']:.2f}%",
                 wgan_add_eval["perturbation_distances"]["mean_linf"],
+                f"{t_wgan_add:.1f} ms",
             ]
         )
 
@@ -705,10 +753,17 @@ def evaluate_attack_suite(
             torch.load(ckpt_manifold, map_location=device, weights_only=True)
         )
         gen_man.eval()
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
         with torch.no_grad():
             x_wgan_man = gen_man.mutate_raw(
                 mal_detected, evaluator.norm_min, evaluator.scales, mode="manifold"
             )
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t_wgan_man = (time.perf_counter() - t0) * 1000.0
 
         wgan_man_eval = evaluator.evaluate_evasion(
             x_orig=mal_detected,
@@ -724,6 +779,7 @@ def evaluate_attack_suite(
                 f"{wgan_man_eval['conditional_asr_pct']:.2f}%",
                 f"{wgan_man_eval['overall_evasion_rate_pct']:.2f}%",
                 wgan_man_eval["perturbation_distances"]["mean_linf"],
+                f"{t_wgan_man:.1f} ms",
             ]
         )
 

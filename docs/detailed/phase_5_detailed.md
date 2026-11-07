@@ -106,26 +106,29 @@ All 100 features in AfterImage are continuous statistical aggregations (1D/2D da
 Evaluated across both the Reconnaissance / Scanning and Volumetric Flooding regimes on $1,000$ confirmed detected packets each:
 
 #### Phase A: Reconnaissance / Scanning Phase (Baseline $\text{RMSE} = 3.7961$)
-| Paradigm / Attack | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) | Mean $L_\infty$ |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Clean Baseline** | None (Unperturbed) | $3.7961$ | $0.00\%$ | $11.85\%$ | $0.0000$ |
-| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $3.7664$ | $0.00\%$ | $11.85\%$ | $0.0500$ |
-| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $3.6568$ | $0.10\%$ | $11.94\%$ | $0.2500$ |
-| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | $2.6743$ | $7.20\%$ | $18.19\%$ | $1.9968$ |
-| **Multi-Step PGD (Manifold)** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.0845$** | **$100.00\%$** | **$100.00\%$** | $8.8060$ |
-| **Polymorphic WGAN-GP (Box)** | $\epsilon = 2.0 \cdot \mathbf{s}$, closed loop | $2.9505$ | $0.00\%$ | $11.85\%$ | $1.9999$ |
-| **Polymorphic WGAN-GP (Manifold)** | Envelope Shaping, single pass | **$0.2276$** | **$100.00\%$** | **$100.00\%$** | $9.5686$ |
+| Paradigm / Attack | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) | Mean $L_\infty$ | Latency (ms / 1k pkts) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Clean Baseline** | None (Unperturbed) | $3.7961$ | $0.00\%$ | $11.85\%$ | $0.0000$ | $0.0\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $3.7664$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $284.4\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $3.6568$ | $0.10\%$ | $11.94\%$ | $0.2500$ | $35.2\text{ ms}$ |
+| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | $2.6743$ | $7.20\%$ | $18.19\%$ | $1.9968$ | $1674.6\text{ ms}$ |
+| **Multi-Step PGD (Manifold)** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.0845$** | **$100.00\%$** | **$100.00\%$** | $8.8060$ | $1513.7\text{ ms}$ |
+| **Polymorphic WGAN-GP (Box)** | $\epsilon = 2.0 \cdot \mathbf{s}$, closed loop | $2.9508$ | $0.00\%$ | $11.85\%$ | $1.9999$ | $19.4\text{ ms}$ |
+| **Polymorphic WGAN-GP (Manifold)** | Envelope Shaping, single pass | **$0.2275$** | **$100.00\%$** | **$100.00\%$** | $9.5688$ | **$1.5\text{ ms}$** |
 
 #### Phase B: Volumetric Flooding Phase (Baseline $\text{RMSE} = 13.5061$)
-| Paradigm / Attack | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) | Mean $L_\infty$ |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Clean Baseline** | None (Unperturbed) | $13.5061$ | $0.00\%$ | $11.85\%$ | $0.0000$ |
-| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $13.4756$ | $0.00\%$ | $11.85\%$ | $0.0500$ |
-| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $13.3556$ | $0.00\%$ | $11.85\%$ | $0.2500$ |
-| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | $12.3060$ | $0.00\%$ | $11.85\%$ | $2.0000$ |
-| **Multi-Step PGD (Manifold)** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.0899$** | **$100.00\%$** | **$100.00\%$** | $35.0449$ |
-| **Polymorphic WGAN-GP (Box)** | $\epsilon = 2.0 \cdot \mathbf{s}$, closed loop | $12.4103$ | $0.00\%$ | $11.85\%$ | $1.9998$ |
-| **Polymorphic WGAN-GP (Manifold)** | Envelope Shaping, single pass | **$0.2285$** | **$100.00\%$** | **$100.00\%$** | $35.0841$ |
+| Paradigm / Attack | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) | Mean $L_\infty$ | Latency (ms / 1k pkts) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Clean Baseline** | None (Unperturbed) | $13.5061$ | $0.00\%$ | $11.85\%$ | $0.0000$ | $0.0\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $13.4756$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $36.8\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $13.3556$ | $0.00\%$ | $11.85\%$ | $0.2500$ | $36.7\text{ ms}$ |
+| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | $12.3060$ | $0.00\%$ | $11.85\%$ | $2.0000$ | $1526.1\text{ ms}$ |
+| **Multi-Step PGD (Manifold)** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.0899$** | **$100.00\%$** | **$100.00\%$** | $35.0449$ | $1733.1\text{ ms}$ |
+| **Polymorphic WGAN-GP (Box)** | $\epsilon = 2.0 \cdot \mathbf{s}$, closed loop | $12.4102$ | $0.00\%$ | $11.85\%$ | $1.9998$ | $1.7\text{ ms}$ |
+| **Polymorphic WGAN-GP (Manifold)** | Envelope Shaping, single pass | **$0.2283$** | **$100.00\%$** | **$100.00\%$** | $35.0845$ | **$1.4\text{ ms}$** |
+
+*Inference Latency Justification:*
+In online network evasion, latency is critical. 50-step PGD requires $1,733.1\text{ ms}$ per 1,000 packets because it computes 50 forward passes and 50 autograd `.backward()` operations through all 16 micro-autoencoders. This creates unbearable delay that causes connection timeouts and packet drops at wire speed. In contrast, Polymorphic WGAN-GP (Manifold) generates equivalent $100.00\%$ evasion in **$1.4\text{ ms}$ per 1,000 packets ($>700,000\text{ pkts/sec}$)** — a **$1,237\times$ speedup** — proving the decisive operational necessity of generative perturbation in real-time adversarial ML.
 
 ---
 

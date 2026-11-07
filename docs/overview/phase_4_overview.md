@@ -27,6 +27,9 @@ This document provides a high-level executive summary of the closed-loop adversa
 
 ## 2. Experimental Telemetry & Comparative Summary
 
+> [!NOTE]
+> **Dataset Sampling Scope:** The 1,000 detected attack samples evaluated during Phase 4 were drawn from the immediate onset of the Mirai attack ($i \approx 121,621$ to $123,000$, representing the initial host probing and scanning onset, baseline $\text{RMSE}_{\text{orig}} = 1.6798$). In Phase 5, the evaluation framework expands to benchmark both an extended reconnaissance scanning window ($i \in [121,621, 131,621]$, baseline $\text{RMSE} = 3.7961$) and the massive volumetric flooding regime ($i \ge 130,000$, baseline $\text{RMSE} = 13.5061$).
+
 Across 1,000 detected attack packets, the evaluation engine measured the following evasion performance across attack paradigms:
 
 | Evaluation Paradigm | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) |
