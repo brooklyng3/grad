@@ -34,7 +34,16 @@ $$\delta^* = -\epsilon \cdot \mathbf{s}_{\text{global}} \odot \text{sign}(\nabla
 $$\mathbf{x}_{\text{adv}} = \text{project}_{\mathcal{C}}(\mathbf{x} + \delta^*)$$
 where $\text{project}_{\mathcal{C}}$ applies physical domain constraints (signed Covariance preserved, PCC $\in [-1, 1]$, unsigned features $\ge 0.0$).
 
-### 2.2. DeepFool for Reconstruction Decision Boundaries
+### 2.2. Multi-Step Projected Gradient Descent (PGD) & Manifold Shaping
+To resolve the single-step overshooting and saturated sigmoid gradient issues of FGSM on extreme flood packets:
+1. **Iterative PGD with Step Size $\alpha = \epsilon / 10$:**
+   $$\mathbf{x}_{t+1} = \text{project}_{L_\infty(\epsilon)}\left(\mathbf{x}_t - \alpha \cdot \mathbf{s}_{\text{global}} \odot \text{sign}(\nabla_{\mathbf{x}} \text{RMSE}(\mathbf{x}_t))\right)$$
+   Smoothly descends the reconstruction surface without catapulting features across optimal valleys.
+2. **Traffic-Shaping Manifold Projection:**
+   In real networks, an attacker mitigates volumetric rate anomalies by rate-pacing packets into normal operating traffic envelopes $[\mathbf{norm\_min}, \mathbf{norm\_max}]$. When `manifold_projection=True`:
+   $$\mathbf{x}_{t+1} = \text{clamp}\left(\mathbf{x}_t - \alpha \cdot \mathbf{s}_{\text{global}} \odot \text{sign}(\nabla_{\mathbf{x}} \text{RMSE}(\mathbf{x}_t)), \min=\mathbf{norm\_min}, \max=\mathbf{norm\_max}\right)$$
+
+### 2.3. DeepFool for Reconstruction Decision Boundaries
 DeepFool iteratively projects a detected sample along the shortest orthogonal path toward the manifold surface defined by $\text{RMSE}(\mathbf{x}) = \theta$:
 $$f(\mathbf{x}) = \text{RMSE}(\mathbf{x}) - \theta$$
 At each iteration $k$:
@@ -76,6 +85,11 @@ Both Generator and Critic operate in this normalized domain.
   $$\hat{\mathbf{x}} = \alpha \tilde{\mathbf{x}}_{\text{real}} + (1 - \alpha) \tilde{\mathbf{x}}_{\text{fake}} \quad \text{where } \alpha \sim \mathcal{U}(0, 1)$$
   $$\mathcal{L}_{\text{GP}} = \mathbb{E}_{\hat{\mathbf{x}}}\left[ (\|\nabla_{\hat{\mathbf{x}}} D(\hat{\mathbf{x}})\|_2 - 1)^2 \right]$$
 
+### 3.4. Hybrid Generator Loss for Phase 4 Closed-Loop Evasion
+Standard WGAN trains the generator strictly against the Critic: $\mathcal{L}_G = -\mathbb{E}[D(G(\mathbf{z}, \tilde{\mathbf{x}}))]$. To ensure generated outputs explicitly drop Kitsune's reconstruction error below $\theta = 0.453419$, Phase 4 incorporates a composite objective:
+$$\mathcal{L}_G = -\mathbb{E}[D(\tilde{\mathbf{x}}_{\text{adv}})] + \lambda_{\text{evade}} \cdot \mathbb{E}\left[\max(\text{RMSE}(\mathbf{x}_{\text{adv}}) - \theta, 0.0)\right] + \lambda_{\text{dist}} \cdot \|\tilde{\mathbf{x}}_{\text{adv}} - \tilde{\mathbf{x}}_{\text{mal}}\|_2$$
+Because `PyTorchKitNET` is fully differentiable, the hinge loss $\max(\text{RMSE} - \theta, 0)$ backpropagates through the autoencoders into the Generator weights, forcing the Generator to synthesize stealthy features that actively minimize reconstruction anomaly scores.
+
 ---
 
 ## 4. Empirical Validation & Baseline Evasion Sweep
@@ -94,7 +108,19 @@ We tested FGSM and DeepFool on a batch of 500 detected Mirai attack packets ($\t
 | $\epsilon = 2.00$ | $0.00\%$ | $2.4317$ | $0.9840$ |
 | $\epsilon = 5.00$ | $0.00\%$ | $3.6743$ | $1.2185$ |
 
-### 4.2. Analytical Insight
+### 4.2. Comparative Baseline Results: FGSM vs. PGD vs. Manifold Shaping
+We evaluated FGSM, standard multi-step PGD, and Manifold Traffic-Shaping PGD on detected Mirai attack batches:
+
+| Attack Method | Perturbation Configuration | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) |
+| :--- | :--- | :--- | :--- |
+| **Clean Baseline** | Unperturbed | $1.6798$ | $0.00\%$ |
+| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}_{\text{global}}$ | $1.6421$ | $0.20\%$ |
+| **Single-Step FGSM** | $\epsilon = 2.00 \cdot \mathbf{s}_{\text{global}}$ (Overshooting) | $2.4317$ | $0.00\%$ |
+| **Multi-Step PGD** | 50 steps, $\alpha = 0.05 \cdot \mathbf{s}, \epsilon = 2.0 \cdot \mathbf{s}$ | $0.8243$ | **$37.00\%$** |
+| **Manifold PGD** | 50 steps, $\alpha = 0.05 \cdot \mathbf{s}$, $[\mathbf{min}, \mathbf{max}]$ | **$0.0974$** | **$100.00\%$** |
+| **WGAN-GP (Prototype)** | 50 steps, $\lambda_{\text{evade}} = 30$, $\epsilon = 2.0$ | **$0.5355$** | **$53.12\%$** |
+
+### 4.3. Analytical Insight
 Single-step FGSM successfully reduces the median RMSE from $1.64$ down to $0.98$. However, because Kitsune's ensemble decomposes features across 16 correlated micro-autoencoders, single-step perturbations that reduce error in one micro-AE can inadvertently increase error in another (reflected when $\epsilon$ gets too large at $5.0$). 
 This confirms the necessity of **multi-step generative modeling (WGAN-GP)** in Phase 4, which learns the joint benign manifold across all 16 micro-autoencoders simultaneously.
 

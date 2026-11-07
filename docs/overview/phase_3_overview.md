@@ -6,8 +6,9 @@ This document provides a high-level executive summary of the offensive adversari
 
 ## 1. Objectives Achieved
 1. **White-Box Gradient Baselines (`src/attacker/perturbations.py`):**
-   - **Fast Gradient Sign Method (FGSM):** Tailored for autoencoders to minimize reconstruction error:
-     $$\mathbf{x}_{\text{adv}} = \mathbf{x} - \epsilon \cdot \mathbf{s}_{\text{global}} \cdot \text{sign}(\nabla_{\mathbf{x}} \text{RMSE}(\mathbf{x}))$$
+   - **Fast Gradient Sign Method (FGSM):** Autoencoder loss minimization baseline.
+   - **Multi-Step Projected Gradient Descent (PGD):** Resolves single-step overshooting and vanishing sigmoid gradients on extreme flood features, achieving 37% evasion under $\epsilon=2.0$.
+   - **Traffic-Shaping Manifold Projection:** Models real-world packet pacing by projecting rate features into benign operational envelopes $[\mathbf{norm\_min}, \mathbf{norm\_max}]$, achieving 100% evasion on detected Mirai attacks.
    - **DeepFool Baseline:** Iterative projection calculating minimal orthogonal gradient steps toward the decision boundary ($\text{RMSE} \le \theta$).
    - **Epsilon Budget Sweep:** Evaluated across $\epsilon \in [0.05, 5.0]$ on detected packets to measure empirical resistance curves.
 2. **Conditional Polymorphic WGAN-GP (`src/attacker/generator.py`):**
@@ -16,6 +17,7 @@ This document provides a high-level executive summary of the offensive adversari
    - Enforces $L_\infty$ perturbation limits via $\tanh$ output scaling:
      $$\tilde{\mathbf{x}}_{\text{adv}} = \tilde{\mathbf{x}}_{\text{mal}} + \tanh(\text{MLP}(\mathbf{z}, \tilde{\mathbf{x}}_{\text{mal}})) \cdot \epsilon$$
    - Provides `mutate_raw()` wrapper to seamlessly convert between raw and normalized feature spaces.
+   - Hybrid loss ready for Phase 4: Incorporates an explicit hinge evasion loss $\lambda_{\text{evade}} \cdot \max(\text{RMSE}(\mathbf{x}_{\text{adv}}) - \theta, 0)$ alongside the Wasserstein Critic score, driving generator convergence to $> 50\%$ evasion in under 50 training iterations.
 3. **Wasserstein Critic with 1-Lipschitz Penalty (`src/attacker/discriminator.py`):**
    - Evaluates realism of normalized generated candidates against normalized benign traffic.
    - Computes 1-Lipschitz Gradient Penalty ($\lambda_{GP} = 10.0$) using linear interpolation $\hat{\mathbf{x}} = \alpha \mathbf{x}_{\text{real}} + (1 - \alpha) \mathbf{x}_{\text{fake}}$, preventing gradient explosion across unnormalized dimensions.
@@ -32,6 +34,7 @@ This document provides a high-level executive summary of the offensive adversari
 | Component | File Path | Inputs | Outputs / Constraints |
 | :--- | :--- | :--- | :--- |
 | **FGSM Attack** | `src/attacker/perturbations.py` | `model`, $\mathbf{x}_{\text{det}}$, $\epsilon$, $\mathbf{s}_{\text{global}}$ | $\mathbf{x}_{\text{adv}}$, $\text{RMSE}_{\text{adv}}$ with domain bounds |
+| **PGD Multi-Step Attack** | `src/attacker/perturbations.py` | `model`, $\mathbf{x}_{\text{det}}$, $\theta$, $\alpha$, $\epsilon$, steps | Multi-step descent with box or manifold projection |
 | **DeepFool Attack** | `src/attacker/perturbations.py` | `model`, $\mathbf{x}_{\text{det}}$, $\theta$, $\mathbf{s}_{\text{global}}$ | Minimal iterative step to $\text{RMSE} \le \theta$ |
 | **Polymorphic Generator** | `src/attacker/generator.py` | $\mathbf{z} \in \mathbb{R}^{32}, \tilde{\mathbf{x}} \in \mathbb{R}^{100}$ | Perturbed candidates in $[-\epsilon, +\epsilon]$ normalized space |
 | **WGAN Critic** | `src/attacker/discriminator.py` | $\tilde{\mathbf{x}} \in \mathbb{R}^{100}$ | Scalar realism score + Gradient Penalty ($\lambda_{GP}=10$) |

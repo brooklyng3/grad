@@ -82,6 +82,83 @@ def fgsm_attack(
     return x_adv, rmse_adv
 
 
+def pgd_attack(
+    model: nn.Module,
+    x: torch.Tensor,
+    theta: float,
+    scales: torch.Tensor,
+    eps: float = 2.0,
+    alpha: Optional[float] = None,
+    num_steps: int = 50,
+    manifold_projection: bool = False,
+    norm_min: Optional[torch.Tensor] = None,
+    norm_max: Optional[torch.Tensor] = None,
+    enforce_domain: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Projected Gradient Descent (PGD) multi-step attack for Autoencoder evasion.
+
+    Iteratively takes small gradient descent steps of size alpha, projecting onto
+    either an L_inf epsilon ball or the benign manifold [norm_min, norm_max]:
+        x_{t+1} = Proj(x_t - alpha * scales * sign(grad_x(RMSE(x_t))))
+
+    Args:
+        model: Trained PyTorchKitNET anomaly detector.
+        x: Input tensor of detected malicious feature vectors [batch_size, 100].
+        theta: Alert threshold.
+        scales: Global dynamic range scale vector [100].
+        eps: Maximum L_inf perturbation budget.
+        alpha: Step size per iteration (defaults to eps / 10).
+        num_steps: Number of PGD iterations.
+        manifold_projection: If True, shapes traffic into benign [norm_min, norm_max].
+        norm_min: Global lower bound tensor.
+        norm_max: Global upper bound tensor.
+        enforce_domain: Whether to enforce physical network domain boundaries.
+
+    Returns:
+        Tuple of (x_adv, rmse_adv) after num_steps iterations.
+    """
+    x_adv = x.clone().detach()
+    step_size = alpha if alpha is not None else (eps / 10.0)
+
+    for _ in range(num_steps):
+        x_adv.requires_grad_(True)
+        rmse = model(x_adv)
+        loss = rmse.sum()
+        loss.backward()
+
+        with torch.no_grad():
+            grad = x_adv.grad
+            if grad is None:
+                break
+
+            # Descent step in direction of lower RMSE
+            direction = torch.sign(grad)
+            x_adv_new = x_adv - step_size * scales * direction
+
+            if manifold_projection and norm_min is not None and norm_max is not None:
+                # Shape features into benign operational window
+                x_adv = torch.clamp(x_adv_new, min=norm_min, max=norm_max)
+            else:
+                # L_inf projection onto epsilon ball around original x
+                delta = torch.clamp(x_adv_new - x, min=-eps * scales, max=eps * scales)
+                x_adv = x + delta
+
+            if enforce_domain:
+                x_adv = apply_domain_constraints(
+                    x_adv=x_adv,
+                    x_orig=x,
+                    eps_linf=None if manifold_projection else eps,
+                    feature_scales=scales,
+                    enforce_afterimage_domain=True,
+                )
+            x_adv = x_adv.detach()
+
+    with torch.no_grad():
+        final_rmse = model(x_adv)
+
+    return x_adv, final_rmse
+
+
 def deepfool_attack(
     model: nn.Module,
     x: torch.Tensor,
