@@ -1,5 +1,6 @@
 
 # Large Dataset & Feature Files (Do not index or read into LLM context)
+data/
 *.pcap
 *.pcapng
 *.tsv
