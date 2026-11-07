@@ -34,6 +34,7 @@ from src.attacker.discriminator import (  # noqa: E402
     compute_gradient_penalty,
 )
 from src.pipeline.evaluator import PipelineEvaluator  # noqa: E402
+from src.utils.constraints import enforce_feature_bounds  # noqa: E402
 
 
 class AdversarialFeedbackLoop:
@@ -44,6 +45,7 @@ class AdversarialFeedbackLoop:
         config_path: str = "configs/wgan_config.yaml",
         kitsune_config_path: str = "configs/kitsune_config.yaml",
         device: Optional[torch.device] = None,
+        manifold_shaping: bool = False,
     ) -> None:
         with open(config_path, "r") as f:
             self.wgan_cfg = yaml.safe_load(f)
@@ -53,6 +55,7 @@ class AdversarialFeedbackLoop:
         self.device = device or torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
+        self.manifold_shaping = manifold_shaping
 
         # 1. Load Pre-trained Defender and Calibration Metadata
         model_path = self.kit_cfg["data"]["model_weights"]
@@ -82,6 +85,7 @@ class AdversarialFeedbackLoop:
             latent_dim=self.latent_dim,
             hidden_dims=w_cfg.get("generator_hidden_dims", [128, 256, 128]),
             max_eps=self.eps,
+            mode="manifold" if manifold_shaping else "additive",
         ).to(self.device)
 
         self.critic = WGANDiscriminator(
@@ -227,8 +231,8 @@ class AdversarialFeedbackLoop:
                 # Critic realism objective
                 loss_adv = -self.critic(adv_norm).mean()
 
-                # Physical network feature domain unnormalization
-                adv_raw = torch.clamp(adv_norm * self.scales + self.norm_min, min=0.0)
+                # Unnormalize preserving signed feature constraints
+                adv_raw = enforce_feature_bounds(adv_norm * self.scales + self.norm_min)
 
                 # Direct backpropagation through PyTorchKitNET
                 rmse_adv = self.defender(adv_raw)
@@ -284,9 +288,12 @@ class AdversarialFeedbackLoop:
         print("\nEvaluating final generator performance across detected pool...")
         with torch.no_grad():
             final_adv_raw = self.generator.mutate_raw(
-                x_mal_raw[:1000], self.norm_min, self.scales, eps=self.eps
+                x_mal_raw[:1000],
+                self.norm_min,
+                self.scales,
+                eps=self.eps,
+                mode="manifold" if self.manifold_shaping else "additive",
             )
-            final_adv_raw = torch.clamp(final_adv_raw, min=0.0)
 
         eval_summary = self.evaluator.evaluate_evasion(
             x_orig=x_mal_raw[:1000],
@@ -331,6 +338,22 @@ class AdversarialFeedbackLoop:
             "generator_path": gen_path,
             "critic_path": critic_path,
         }
+
+    def train(
+        self,
+        num_epochs: int = 10,
+        batch_size: int = 128,
+        lambda_evade: float = 30.0,
+        lambda_dist: float = 0.05,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Convenience alias for train_loop."""
+        return self.train_loop(
+            num_epochs=num_epochs,
+            batch_size=batch_size,
+            lambda_evade=lambda_evade,
+            lambda_dist=lambda_dist,
+        )
 
 
 if __name__ == "__main__":

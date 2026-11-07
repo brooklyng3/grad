@@ -16,5 +16,5 @@
     "balanced_accuracy": 0.9401243150308498
   },
   "roc_auc": 0.9417666412550999,
-  "eval_time_seconds": 4.883843660354614
+  "eval_time_seconds": 5.006770610809326
 }

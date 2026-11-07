@@ -26,8 +26,9 @@ To ensure scientific reproducibility and guard against artificial metric inflati
    Measures the attacker's ability to mutate packets that were actively flagged by Kitsune:
    $$\text{ASR}_{\text{cond}} = \frac{\sum_{i=1}^{N_{\text{det}}} \mathbb{I}(\text{RMSE}(\mathbf{x}_{\text{adv}}^{(i)}) \le \theta)}{N_{\text{det}}} \times 100\%$$
 2. **Overall Evasion Rate ($\text{ER}_{\text{total}}$):**
-   Measures total evasion across the entire attack population (including the $76,123$ pre-evading packets):
-   $$\text{ER}_{\text{total}} = \frac{76,123 + \sum_{i=1}^{N_{\text{det}}} \mathbb{I}(\text{RMSE}(\mathbf{x}_{\text{adv}}^{(i)}) \le \theta)}{642,516} \times 100\%$$
+   Measures total evasion across the entire attack population (including the $76,123$ pre-evading packets), properly extrapolating sample success proportions when evaluated on subsamples $N_{\text{eval}} \le |\mathcal{M}_{\text{det}}|$:
+   $$\text{ER}_{\text{total}} = \frac{N_{\text{pre-evaded}} + |\mathcal{M}_{\text{det}}| \cdot \left(\frac{\text{ASR}_{\text{cond}}}{100}\right)}{N_{\text{total\_attacks}}} \times 100\%$$
+   Where $N_{\text{pre-evaded}} = 76,123$, $|\mathcal{M}_{\text{det}}| = 566,393$, and $N_{\text{total\_attacks}} = 642,516$. When evaluating the complete attack population ($N_{\text{eval}} = |\mathcal{M}_{\text{det}}|$), this reduces to the exact count sum.
 
 ### 2.2. Normalized Perturbation Distances
 To quantify the distortion introduced by the attacker relative to physical feature scales:
@@ -51,7 +52,7 @@ $$\mathcal{L}_G = -\mathbb{E}\left[D(\tilde{\mathbf{x}}_{\text{adv}})\right] + \
 
 Where:
 - $\tilde{\mathbf{x}}_{\text{adv}} = \tilde{\mathbf{x}}_{\text{mal}} + \tanh(\text{MLP}(\mathbf{z}, \tilde{\mathbf{x}}_{\text{mal}})) \cdot \epsilon$
-- $\mathbf{x}_{\text{adv}} = \max(\tilde{\mathbf{x}}_{\text{adv}} \odot \mathbf{s}_{\text{global}} + \mathbf{norm\_min}_{\text{global}}, 0.0)$
+- $\mathbf{x}_{\text{adv}} = \text{enforce\_feature\_bounds}(\tilde{\mathbf{x}}_{\text{adv}} \odot \mathbf{s}_{\text{global}} + \mathbf{norm\_min}_{\text{global}})$ (preserving signed Covariances and $[-1, 1]$ PCCs)
 - Autograd flows gradients from `PyTorchKitNET`'s 16 micro-autoencoders directly into the Generator weights via $\frac{\partial \text{RMSE}}{\partial \mathbf{x}_{\text{adv}}} \cdot \frac{\partial \mathbf{x}_{\text{adv}}}{\partial \theta_G}$.
 
 ---

@@ -90,8 +90,12 @@ class PipelineEvaluator:
         cond_asr = (num_evaded / (num_detected + 1e-12)) * 100.0
 
         if total_attack_population is not None:
+            # Extrapolate conditional ASR across the detected attack population:
+            # ER_total = (N_pre_evaded + |M_det| * (ASR_cond / 100)) / N_total * 100%
+            num_det_total = total_attack_population - num_pre_evaded
+            estimated_evaded = num_det_total * (num_evaded / float(num_detected))
             overall_er = (
-                (num_pre_evaded + num_evaded) / float(total_attack_population)
+                (num_pre_evaded + estimated_evaded) / float(total_attack_population)
             ) * 100.0
         else:
             overall_er = cond_asr

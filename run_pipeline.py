@@ -106,10 +106,23 @@ def parse_args() -> argparse.Namespace:
         help="Number of detected attack samples to evaluate during attack sweeps.",
     )
     parser.add_argument(
+        "--attack_phase",
+        type=str,
+        default="both",
+        choices=["scanning", "flood", "both"],
+        help="Attack regime: early scanning, volumetric flood, or both.",
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
         default=256,
         help="Mini-batch size for GPU inference.",
+    )
+    parser.add_argument(
+        "--manifold_shaping",
+        action="store_true",
+        default=False,
+        help="Train WGAN-GP generator with manifold envelope shaping.",
     )
     parser.add_argument(
         "--device",
@@ -171,12 +184,26 @@ def get_detected_attack_sample(
     evaluator: PipelineEvaluator,
     num_samples: int,
     device: torch.device,
+    phase: str = "flood",
 ) -> torch.Tensor:
-    """Extracts a slice of confirmed detected attack packets (RMSE > theta)."""
-    print(f"[*] Extracting {num_samples} confirmed detected attack samples...")
-    candidate_indices = np.linspace(
-        ATTACK_START, len(feats_mmap) - 1, num_samples * 2, dtype=int
-    )
+    """Extracts confirmed detected attack packets (RMSE > theta).
+
+    Args:
+        feats_mmap: Memory-mapped features array.
+        evaluator: PipelineEvaluator engine.
+        num_samples: Target number of detected packets.
+        device: Torch device.
+        phase: 'scanning' (early reconnaissance phase) or 'flood' (volumetric flood).
+    """
+    if phase == "scanning":
+        candidate_indices = np.arange(
+            ATTACK_START, min(ATTACK_START + num_samples * 10, len(feats_mmap))
+        )
+    else:
+        candidate_indices = np.linspace(
+            ATTACK_START + 10000, len(feats_mmap) - 1, num_samples * 2, dtype=int
+        )
+
     candidate_feats = torch.from_numpy(
         np.array(feats_mmap[candidate_indices], dtype=np.float32)
     )
@@ -185,18 +212,15 @@ def get_detected_attack_sample(
     detected_mask = scores > evaluator.theta
     detected_feats = candidate_feats[detected_mask]
 
-    if len(detected_feats) < num_samples:
-        print(
-            f"[!] Warning: Found {len(detected_feats)} detected packets "
-            f"(requested {num_samples})"
-        )
-        selected = detected_feats
-    else:
-        selected = detected_feats[:num_samples]
-
+    selected = (
+        detected_feats[:num_samples]
+        if len(detected_feats) >= num_samples
+        else detected_feats
+    )
+    mean_rmse = float(np.mean(evaluator.score_batches(selected)))
     print(
-        f"[*] Selected {len(selected)} detected packets. Initial mean RMSE: "
-        f"{float(np.mean(evaluator.score_batches(selected))):.4f}"
+        f"[*] [{phase.upper()}] Selected {len(selected)} detected packets. "
+        f"Initial mean RMSE: {mean_rmse:.4f}"
     )
     return selected.to(device)
 
@@ -443,106 +467,58 @@ def run_pgd_attack(
 
 def run_train_wgan(
     args: argparse.Namespace,
-    torch_model: PyTorchKitNET,
-    evaluator: PipelineEvaluator,
-    feats_mmap: np.ndarray,
     device: torch.device,
 ) -> Dict[str, Any]:
     """Executes closed-loop WGAN-GP feedback training."""
+    mode_str = "Manifold Envelope" if args.manifold_shaping else "Additive Box"
     print("\n" + "=" * 70)
-    print("MODE: Closed-Loop WGAN-GP Adversarial Feedback Training")
+    print(f"MODE: Closed-Loop WGAN-GP Training ({mode_str})")
     print("=" * 70)
 
-    # Benign pool (10,000 post-grace)
-    benign_pool = torch.from_numpy(
-        np.array(feats_mmap[BENIGN_EVAL_START : BENIGN_EVAL_START + 10000], np.float32)
-    )
-    # Malicious detected pool
-    stride = max(1, TOTAL_ATTACKS // 20000)
-    candidate_indices = np.arange(ATTACK_START, len(feats_mmap), stride)
-    candidates = torch.from_numpy(
-        np.array(feats_mmap[candidate_indices], dtype=np.float32)
-    )
-    scores = evaluator.score_batches(candidates)
-    mal_pool = candidates[scores > evaluator.theta][:10000]
-
-    print(f"[*] Training pools: Benign={len(benign_pool)}, Malicious={len(mal_pool)}")
-
     feedback_loop = AdversarialFeedbackLoop(
-        defender_model=torch_model,
-        theta=evaluator.theta,
-        benign_data=benign_pool,
-        malicious_data=mal_pool,
-        latent_dim=32,
-        batch_size=128,
-        lr_g=1e-4,
-        lr_c=1e-4,
-        lambda_gp=10.0,
-        lambda_evade=5.0,
-        lambda_dist=0.5,
-        eps_linf=2.0,
+        config_path=args.wgan_config,
+        kitsune_config_path=args.config,
         device=device,
+        manifold_shaping=args.manifold_shaping,
     )
 
-    history = feedback_loop.train(num_steps=100, n_critic=5, log_interval=25)
+    res = feedback_loop.train_loop(
+        num_epochs=10,
+        batch_size=128,
+        lambda_evade=50.0 if args.manifold_shaping else 30.0,
+        lambda_dist=0.01 if args.manifold_shaping else 0.05,
+    )
 
-    # Save Checkpoints
+    # Save Checkpoint
     ckpt_dir = "data/attack_samples"
     os.makedirs(ckpt_dir, exist_ok=True)
-    g_path = os.path.join(ckpt_dir, "wgan_generator.pt")
-    c_path = os.path.join(ckpt_dir, "wgan_critic.pt")
+    if args.manifold_shaping:
+        g_path = os.path.join(ckpt_dir, "wgan_manifold_generator.pt")
+    else:
+        g_path = os.path.join(ckpt_dir, "wgan_generator.pt")
     torch.save(feedback_loop.generator.state_dict(), g_path)
-    torch.save(feedback_loop.critic.state_dict(), c_path)
     print(f"[+] Generator saved to: {g_path}")
-    print(f"[+] Critic saved to: {c_path}")
 
-    # Evaluate trained generator
-    test_mal = mal_pool[: args.samples].to(device)
-    with torch.no_grad():
-        feedback_loop.generator.eval()
-        z = torch.randn(len(test_mal), 32, device=device)
-        norm_min, norm_max, scales = torch_model.get_global_feature_bounds(
-            as_torch=True
-        )
-        norm_mal = (test_mal - norm_min) / torch.clamp(scales, min=1e-8)
-        norm_adv = feedback_loop.generator(norm_mal, z)
-        x_adv = torch.clamp(norm_adv * scales + norm_min, min=0.0)
-
-    res = evaluator.evaluate_evasion(
-        x_orig=test_mal,
-        x_adv=x_adv,
-        num_pre_evaded=NUM_PRE_EVADED,
-        total_attack_population=TOTAL_ATTACKS,
+    out_file = os.path.join(
+        args.output_dir,
+        (
+            "wgan_manifold_summary.json"
+            if args.manifold_shaping
+            else "wgan_training_summary.json"
+        ),
     )
-
-    print(
-        f"[*] Final WGAN Evasion: Conditional ASR = {res['conditional_asr_pct']:.2f}%, "
-        f"Overall ER = {res['overall_evasion_rate_pct']:.2f}%"
-    )
-
-    out_file = os.path.join(args.output_dir, "wgan_training_summary.json")
-    export_metrics_json({"history": history, "eval_result": res}, out_file)
+    export_metrics_json(res, out_file)
     return res
 
 
-def run_evaluate_all(
-    args: argparse.Namespace,
-    torch_model: PyTorchKitNET,
-    theta: float,
-    feats_mmap: np.ndarray,
-    evaluator: PipelineEvaluator,
+def evaluate_attack_suite(
+    suite_title: str,
     mal_detected: torch.Tensor,
+    torch_model: PyTorchKitNET,
+    evaluator: PipelineEvaluator,
     device: torch.device,
-) -> None:
-    """Executes a full comparative evaluation across all paradigms."""
-    print("\n" + "=" * 70)
-    print("MODE: Comprehensive Comparative Evaluation (All Paradigms)")
-    print("=" * 70)
-
-    # 1. Clean Baseline Detection
-    _ = run_evaluate_clean(args, torch_model, theta, feats_mmap, evaluator)
-
-    # 2. Benchmarking Table
+) -> Tuple[str, List[List[Any]]]:
+    """Evaluates all adversarial paradigms on a given detected malicious subset."""
     summary_rows = []
     headers = [
         "Paradigm / Attack",
@@ -553,7 +529,7 @@ def run_evaluate_all(
         "Mean Linf",
     ]
 
-    # Clean unperturbed
+    # 1. Clean unperturbed
     clean_eval = evaluator.evaluate_evasion(
         x_orig=mal_detected,
         x_adv=mal_detected,
@@ -571,7 +547,7 @@ def run_evaluate_all(
         ]
     )
 
-    # FGSM eps=0.05
+    # 2. FGSM eps=0.05
     x_fgsm_05, _ = fgsm_attack(
         model=torch_model,
         x=mal_detected,
@@ -595,7 +571,7 @@ def run_evaluate_all(
         ]
     )
 
-    # FGSM eps=0.25
+    # 3. FGSM eps=0.25
     x_fgsm_25, _ = fgsm_attack(
         model=torch_model,
         x=mal_detected,
@@ -619,7 +595,7 @@ def run_evaluate_all(
         ]
     )
 
-    # Multi-Step PGD (50 steps, eps=2.0)
+    # 4. Multi-Step PGD (50 steps, Box eps=2.0)
     x_pgd, _ = pgd_attack(
         model=torch_model,
         x=mal_detected,
@@ -640,7 +616,7 @@ def run_evaluate_all(
     )
     summary_rows.append(
         [
-            "Multi-Step PGD",
+            "Multi-Step PGD (Box)",
             "50 steps, eps = 2.0 * s",
             pgd_eval["rmse_metrics"]["adversarial_mean"],
             f"{pgd_eval['conditional_asr_pct']:.2f}%",
@@ -649,7 +625,7 @@ def run_evaluate_all(
         ]
     )
 
-    # Manifold Traffic-Shaping (50 steps)
+    # 5. Multi-Step PGD (50 steps, Manifold Shaping)
     x_manifold, _ = pgd_attack(
         model=torch_model,
         x=mal_detected,
@@ -670,7 +646,7 @@ def run_evaluate_all(
     )
     summary_rows.append(
         [
-            "Manifold Traffic-Shaping",
+            "Multi-Step PGD (Manifold)",
             "50 steps, [min, max]",
             manifold_eval["rmse_metrics"]["adversarial_mean"],
             f"{manifold_eval['conditional_asr_pct']:.2f}%",
@@ -679,97 +655,158 @@ def run_evaluate_all(
         ]
     )
 
-    # WGAN-GP Generator (if checkpoint exists)
-    ckpt_path = "data/attack_samples/wgan_generator.pt"
-    if os.path.exists(ckpt_path):
-        gen = PolymorphicGenerator(
+    # 6. Polymorphic WGAN-GP (Additive Box Generator)
+    ckpt_additive = "data/attack_samples/wgan_generator.pt"
+    if os.path.exists(ckpt_additive):
+        gen_add = PolymorphicGenerator(
             feature_dim=100,
             latent_dim=32,
             hidden_dims=[128, 256, 128],
             max_eps=2.0,
+            mode="additive",
         ).to(device)
-        gen.load_state_dict(
-            torch.load(ckpt_path, map_location=device, weights_only=True)
+        gen_add.load_state_dict(
+            torch.load(ckpt_additive, map_location=device, weights_only=True)
         )
-        gen.eval()
+        gen_add.eval()
         with torch.no_grad():
-            z = torch.randn(len(mal_detected), 32, device=device)
-            norm_min, norm_max, scales = torch_model.get_global_feature_bounds(
-                as_torch=True
+            x_wgan_add = gen_add.mutate_raw(
+                mal_detected, evaluator.norm_min, evaluator.scales, mode="additive"
             )
-            norm_mal = (mal_detected - norm_min) / torch.clamp(scales, min=1e-8)
-            norm_adv = gen(norm_mal, z)
-            x_wgan = torch.clamp(norm_adv * scales + norm_min, min=0.0)
 
-        wgan_eval = evaluator.evaluate_evasion(
+        wgan_add_eval = evaluator.evaluate_evasion(
             x_orig=mal_detected,
-            x_adv=x_wgan,
+            x_adv=x_wgan_add,
             num_pre_evaded=NUM_PRE_EVADED,
             total_attack_population=TOTAL_ATTACKS,
         )
         summary_rows.append(
             [
-                "Polymorphic WGAN-GP",
+                "Polymorphic WGAN-GP (Box)",
                 "eps = 2.0 * s, closed loop",
-                wgan_eval["rmse_metrics"]["adversarial_mean"],
-                f"{wgan_eval['conditional_asr_pct']:.2f}%",
-                f"{wgan_eval['overall_evasion_rate_pct']:.2f}%",
-                wgan_eval["perturbation_distances"]["mean_linf"],
+                wgan_add_eval["rmse_metrics"]["adversarial_mean"],
+                f"{wgan_add_eval['conditional_asr_pct']:.2f}%",
+                f"{wgan_add_eval['overall_evasion_rate_pct']:.2f}%",
+                wgan_add_eval["perturbation_distances"]["mean_linf"],
+            ]
+        )
+
+    # 7. Polymorphic WGAN-GP (Manifold Shaping Generator)
+    ckpt_manifold = "data/attack_samples/wgan_manifold_generator.pt"
+    if os.path.exists(ckpt_manifold):
+        gen_man = PolymorphicGenerator(
+            feature_dim=100,
+            latent_dim=32,
+            hidden_dims=[128, 256, 128],
+            max_eps=2.0,
+            mode="manifold",
+        ).to(device)
+        gen_man.load_state_dict(
+            torch.load(ckpt_manifold, map_location=device, weights_only=True)
+        )
+        gen_man.eval()
+        with torch.no_grad():
+            x_wgan_man = gen_man.mutate_raw(
+                mal_detected, evaluator.norm_min, evaluator.scales, mode="manifold"
+            )
+
+        wgan_man_eval = evaluator.evaluate_evasion(
+            x_orig=mal_detected,
+            x_adv=x_wgan_man,
+            num_pre_evaded=NUM_PRE_EVADED,
+            total_attack_population=TOTAL_ATTACKS,
+        )
+        summary_rows.append(
+            [
+                "Polymorphic WGAN-GP (Manifold)",
+                "Envelope Shaping, single pass",
+                wgan_man_eval["rmse_metrics"]["adversarial_mean"],
+                f"{wgan_man_eval['conditional_asr_pct']:.2f}%",
+                f"{wgan_man_eval['overall_evasion_rate_pct']:.2f}%",
+                wgan_man_eval["perturbation_distances"]["mean_linf"],
             ]
         )
 
     md_table = format_markdown_table(headers, summary_rows)
-    print("\n" + "=" * 70)
-    print("FINAL COMPARATIVE BENCHMARK SUMMARY")
-    print("=" * 70)
+    print(f"\n### {suite_title}\n")
     print(md_table + "\n")
+    return md_table, summary_rows
+
+
+def run_evaluate_all(
+    args: argparse.Namespace,
+    torch_model: PyTorchKitNET,
+    theta: float,
+    feats_mmap: np.ndarray,
+    evaluator: PipelineEvaluator,
+    device: torch.device,
+) -> None:
+    """Executes a full comparative evaluation across all paradigms and traffic
+    regimes."""
+    print("\n" + "=" * 70)
+    print("MODE: Comprehensive Comparative Evaluation (All Paradigms)")
+    print("=" * 70)
+
+    # 1. Clean Baseline Detection
+    _ = run_evaluate_clean(args, torch_model, theta, feats_mmap, evaluator)
+
+    combined_markdown = ["# Final Comparative Benchmark Summary\n"]
+
+    phases = []
+    if args.attack_phase in ["scanning", "both"]:
+        phases.append(
+            ("Phase A: Reconnaissance / Scanning Traffic (Early Attack)", "scanning")
+        )
+    if args.attack_phase in ["flood", "both"]:
+        phases.append(("Phase B: Volumetric Flooding Traffic (Heavy Attack)", "flood"))
+
+    for title, phase_key in phases:
+        mal_subset = get_detected_attack_sample(
+            feats_mmap, evaluator, args.samples, device, phase=phase_key
+        )
+        md_table, _ = evaluate_attack_suite(
+            title, mal_subset, torch_model, evaluator, device
+        )
+        combined_markdown.append(f"## {title}\n\n{md_table}\n")
 
     # Save to disk
     os.makedirs(args.output_dir, exist_ok=True)
     table_file = os.path.join(args.output_dir, "evaluation_table.md")
     with open(table_file, "w") as f:
-        f.write("# Final Comparative Benchmark Summary\n\n" + md_table + "\n")
-    print(f"[+] Saved comparative markdown table to: {table_file}")
+        f.write("\n".join(combined_markdown))
+    print(f"[+] Saved comparative benchmark tables to: {table_file}")
 
 
 def main() -> None:
     args = parse_args()
     device = get_device(args.device)
 
-    # Load components
+    if args.mode == "train_wgan":
+        run_train_wgan(args, device)
+        return
+
+    # Load components for evaluation modes
     torch_model, theta, feats_mmap, evaluator = load_pipeline_components(args, device)
 
     if args.mode == "evaluate_clean":
         run_evaluate_clean(args, torch_model, theta, feats_mmap, evaluator)
 
     elif args.mode == "fgsm_sweep":
+        phase = args.attack_phase if args.attack_phase != "both" else "flood"
         mal_detected = get_detected_attack_sample(
-            feats_mmap, evaluator, args.samples, device
+            feats_mmap, evaluator, args.samples, device, phase=phase
         )
         run_fgsm_sweep(args, torch_model, evaluator, mal_detected)
 
     elif args.mode == "pgd_attack":
+        phase = args.attack_phase if args.attack_phase != "both" else "flood"
         mal_detected = get_detected_attack_sample(
-            feats_mmap, evaluator, args.samples, device
+            feats_mmap, evaluator, args.samples, device, phase=phase
         )
         run_pgd_attack(args, torch_model, evaluator, mal_detected)
 
-    elif args.mode == "train_wgan":
-        run_train_wgan(args, torch_model, evaluator, feats_mmap, device)
-
     elif args.mode == "evaluate_all":
-        mal_detected = get_detected_attack_sample(
-            feats_mmap, evaluator, args.samples, device
-        )
-        run_evaluate_all(
-            args,
-            torch_model,
-            theta,
-            feats_mmap,
-            evaluator,
-            mal_detected,
-            device,
-        )
+        run_evaluate_all(args, torch_model, theta, feats_mmap, evaluator, device)
 
 
 if __name__ == "__main__":
