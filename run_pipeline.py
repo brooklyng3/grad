@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-End-to-End Adversarial ML Evaluation Pipeline CLI (Phase 5).
+End-to-End Adversarial ML Evaluation Pipeline CLI (Phase 6).
 
 Unified command-line orchestrator for evaluating Kitsune NIDS vs. Polymorphic
 Adversarial Attacks (FGSM, PGD, WGAN-GP).
@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -27,10 +28,22 @@ sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("Kitsune-py"))
 
 from src.defender.torch_kitnet import PyTorchKitNET  # noqa: E402
-from src.attacker.perturbations import fgsm_attack, pgd_attack  # noqa: E402
+from src.attacker.perturbations import (  # noqa: E402
+    deepfool_attack,
+    envelope_projection,
+    fgsm_attack,
+    pgd_attack,
+    wgan_best_of_k,
+    wgan_refine,
+)
 from src.attacker.generator import PolymorphicGenerator  # noqa: E402
 from src.pipeline.evaluator import PipelineEvaluator  # noqa: E402
 from src.pipeline.feedback_loop import AdversarialFeedbackLoop  # noqa: E402
+from src.utils.data_splits import (  # noqa: E402
+    ATTACK_START,
+    attack_indices_for_split,
+    benign_indices_for_split,
+)
 from src.utils.metrics import (  # noqa: E402
     compute_detection_metrics,
     compute_roc_auc,
@@ -38,15 +51,19 @@ from src.utils.metrics import (  # noqa: E402
     export_metrics_json,
     export_metrics_csv,
 )
-
-BENIGN_EVAL_START = 55000
-BENIGN_EVAL_END = 121621
-ATTACK_START = 121621
-TOTAL_ATTACKS = 642516
-NUM_PRE_EVADED = 76123  # Naturally evading baseline attack packets
+from src.utils.seed import seed_everything  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
+    # Pull defaults from the WGAN config so every documented key is live.
+    try:
+        with open("configs/wgan_config.yaml", "r") as f:
+            _wcfg = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        _wcfg = {}
+    _pert = _wcfg.get("perturbation", {})
+    _train = _wcfg.get("training", {})
+
     parser = argparse.ArgumentParser(
         description="Kitsune NIDS vs Polymorphic Adversarial ML Pipeline"
     )
@@ -100,6 +117,12 @@ def parse_args() -> argparse.Namespace:
         help="Directory to save metric reports, JSON dumps, and tables.",
     )
     parser.add_argument(
+        "--checkpoint_dir",
+        type=str,
+        default="data/attack_samples",
+        help="Directory for WGAN checkpoints and metadata.",
+    )
+    parser.add_argument(
         "--samples",
         type=int,
         default=1000,
@@ -111,6 +134,60 @@ def parse_args() -> argparse.Namespace:
         default="both",
         choices=["scanning", "flood", "both"],
         help="Attack regime: early scanning, volumetric flood, or both.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for Python, NumPy, and Torch.",
+    )
+    parser.add_argument(
+        "--eps",
+        type=float,
+        default=float(_pert.get("eps_linf", 2.0)),
+        help="Perturbation budget used for WGAN training and evaluation.",
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=int(_pert.get("best_of_k_retries", 10)),
+        help="Maximum generator draws per packet for best-of-k evasion.",
+    )
+    parser.add_argument(
+        "--refine_steps",
+        type=int,
+        default=10,
+        help="Generator feedback-refinement steps for the box WGAN row.",
+    )
+    parser.add_argument(
+        "--deepfool_max_eps",
+        type=float,
+        default=float(_pert.get("eps_linf", 2.0)),
+        help="L-inf budget cap for the DeepFool baseline.",
+    )
+    parser.add_argument(
+        "--deepfool_steps",
+        type=int,
+        default=int(_pert.get("max_iterations", 50)),
+        help="Iterations for the DeepFool baseline.",
+    )
+    parser.add_argument(
+        "--deepfool_step",
+        type=float,
+        default=float(_pert.get("step_size", 0.1)),
+        help="Step scale for the DeepFool baseline.",
+    )
+    parser.add_argument(
+        "--train_epochs",
+        type=int,
+        default=int(_train.get("epochs", 10)),
+        help="WGAN feedback-loop training epochs.",
+    )
+    parser.add_argument(
+        "--train_batch_size",
+        type=int,
+        default=int(_train.get("batch_size", 128)),
+        help="WGAN feedback-loop training batch size.",
     )
     parser.add_argument(
         "--batch_size",
@@ -139,6 +216,14 @@ def get_device(requested: str | None = None) -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def load_labels(path: str = "data/raw/mirai_labels.csv") -> np.ndarray:
+    """Loads the binary ground-truth label vector."""
+    with open(path, "r") as f:
+        return np.array(
+            [int(line.strip()) for line in f if line.strip()], dtype=np.int32
+        )
+
+
 def load_pipeline_components(
     args: argparse.Namespace, device: torch.device
 ) -> Tuple[PyTorchKitNET, float, np.ndarray, PipelineEvaluator]:
@@ -154,9 +239,14 @@ def load_pipeline_components(
     if os.path.exists(args.threshold_config):
         with open(args.threshold_config, "r") as f:
             tcfg = yaml.safe_load(f)
-            theta = float(tcfg.get("threshold", 0.453419))
+            theta = float(tcfg.get("threshold", 0.455986))
+            attack_meta = tcfg.get("attack_metrics", {})
+            num_pre_evaded = int(attack_meta.get("evaded_count", 76123))
+            total_attack_population = int(attack_meta.get("num_evaluated", 642516))
     else:
-        theta = 0.453419
+        theta = 0.455986
+        num_pre_evaded = 76123
+        total_attack_population = 642516
         print(f"[!] Warning: {args.threshold_config} missing, using default {theta}")
 
     print(
@@ -176,6 +266,13 @@ def load_pipeline_components(
         device=device,
         batch_size=args.batch_size,
     )
+    evaluator.num_pre_evaded = num_pre_evaded
+    evaluator.total_attack_population = total_attack_population
+    labels = load_labels()
+    validation = benign_indices_for_split(labels, "validation")
+    evaluator.set_benign_reference(
+        torch.tensor(np.array(feats_mmap[validation[:2000]], dtype=np.float32))
+    )
     return torch_model, theta, feats_mmap, evaluator
 
 
@@ -185,7 +282,8 @@ def get_detected_attack_sample(
     num_samples: int,
     device: torch.device,
     phase: str = "flood",
-) -> torch.Tensor:
+    return_indices: bool = False,
+) -> Any:
     """Extracts confirmed detected attack packets (RMSE > theta).
 
     Args:
@@ -194,15 +292,26 @@ def get_detected_attack_sample(
         num_samples: Target number of detected packets.
         device: Torch device.
         phase: 'scanning' (early reconnaissance phase) or 'flood' (volumetric flood).
+        return_indices: If True, also return the selected absolute indices.
+
+    Returns:
+        Selected feature tensor, or (tensor, indices) when ``return_indices``.
     """
+    labels = load_labels()
+    eval_attacks = attack_indices_for_split(np.where(labels == 1)[0], "eval")
+
     if phase == "scanning":
-        candidate_indices = np.arange(
-            ATTACK_START, min(ATTACK_START + num_samples * 10, len(feats_mmap))
-        )
+        # The first few hundred attack packets are still ramping up and often
+        # score below theta, so never use a candidate window smaller than 10k.
+        scan_window = max(10000, num_samples * 10)
+        candidate_indices = eval_attacks[(eval_attacks - ATTACK_START) < scan_window]
     else:
-        candidate_indices = np.linspace(
-            ATTACK_START + 10000, len(feats_mmap) - 1, num_samples * 2, dtype=int
+        later = eval_attacks[(eval_attacks - ATTACK_START) >= 10000]
+        n_candidates = max(1000, num_samples * 2)
+        positions = np.linspace(
+            0, len(later) - 1, min(n_candidates, len(later)), dtype=int
         )
+        candidate_indices = later[positions]
 
     candidate_feats = torch.from_numpy(
         np.array(feats_mmap[candidate_indices], dtype=np.float32)
@@ -212,16 +321,23 @@ def get_detected_attack_sample(
     detected_mask = scores > evaluator.theta
     detected_feats = candidate_feats[detected_mask]
 
-    selected = (
-        detected_feats[:num_samples]
-        if len(detected_feats) >= num_samples
-        else detected_feats
+    count = min(len(detected_feats), num_samples)
+    selected = detected_feats[:count]
+    selected_indices = candidate_indices[detected_mask][:count]
+    mean_rmse = (
+        float(np.mean(evaluator.score_batches(selected))) if count else float("nan")
     )
-    mean_rmse = float(np.mean(evaluator.score_batches(selected)))
     print(
         f"[*] [{phase.upper()}] Selected {len(selected)} detected packets. "
         f"Initial mean RMSE: {mean_rmse:.4f}"
     )
+    if len(selected) < num_samples:
+        print(
+            f"[!] Only {len(selected)} detected packets available; "
+            f"requested {num_samples}."
+        )
+    if return_indices:
+        return selected.to(device), selected_indices
     return selected.to(device)
 
 
@@ -242,14 +358,18 @@ def run_evaluate_clean(
     print("MODE: Clean Baseline Detection Evaluation")
     print("=" * 70)
 
-    # Benign validation slice (post-grace: 55,000 to 121,621)
+    # Disjoint benign validation split (calibration used even parity)
+    labels = load_labels()
+    if len(labels) != len(feats_mmap):
+        raise ValueError("Label and feature lengths do not match")
+    benign_indices = benign_indices_for_split(labels, "validation")
     benign_feats = torch.from_numpy(
-        np.array(feats_mmap[BENIGN_EVAL_START:BENIGN_EVAL_END], dtype=np.float32)
+        np.array(feats_mmap[benign_indices], dtype=np.float32)
     )
-    print(f"[*] Benign evaluation subset size: {len(benign_feats):,} packets")
+    print(f"[*] Benign validation subset size: {len(benign_feats):,} packets")
 
     # Sample attack slice (up to 50,000 for high-confidence metrics)
-    attack_stride = max(1, TOTAL_ATTACKS // 50000)
+    attack_stride = max(1, evaluator.total_attack_population // 50000)
     attack_indices = np.arange(ATTACK_START, len(feats_mmap), attack_stride)
     attack_feats = torch.from_numpy(
         np.array(feats_mmap[attack_indices], dtype=np.float32)
@@ -269,6 +389,14 @@ def run_evaluate_clean(
     roc_auc_val, _, _, _ = compute_roc_auc(y_true, all_scores)
     metrics["roc_auc"] = roc_auc_val
     metrics["eval_time_seconds"] = elapsed
+    benign_queries = torch.from_numpy(
+        np.array(feats_mmap[benign_indices[2000:2200]], dtype=np.float32)
+    )
+    metrics["benign_knn_baseline"] = evaluator.benign_knn_distance(benign_queries)
+    benign_queries = torch.from_numpy(
+        np.array(feats_mmap[benign_indices[2000:2200]], dtype=np.float32)
+    )
+    metrics["benign_knn_baseline"] = evaluator.benign_knn_distance(benign_queries)
 
     # Display Markdown Table
     table_headers = ["Metric", "Value"]
@@ -281,6 +409,7 @@ def run_evaluate_clean(
         ["Precision", f"{rates['precision'] * 100:.2f}%"],
         ["F1-Score", f"{rates['f1_score']:.4f}"],
         ["Overall Accuracy", f"{rates['accuracy'] * 100:.2f}%"],
+        ["Benign kNN baseline (norm. L2)", f"{metrics['benign_knn_baseline']:.4f}"],
         ["Inference Throughput", f"{len(all_scores) / elapsed:,.1f} pkts/sec"],
     ]
     md_table = format_markdown_table(table_headers, table_rows)
@@ -325,8 +454,8 @@ def run_fgsm_sweep(
         res = evaluator.evaluate_evasion(
             x_orig=mal_detected,
             x_adv=x_adv,
-            num_pre_evaded=NUM_PRE_EVADED,
-            total_attack_population=TOTAL_ATTACKS,
+            num_pre_evaded=evaluator.num_pre_evaded,
+            total_attack_population=evaluator.total_attack_population,
         )
         res["param_name"] = "epsilon"
         res["param_value"] = eps
@@ -438,8 +567,8 @@ def run_pgd_attack(
         res = evaluator.evaluate_evasion(
             x_orig=mal_detected,
             x_adv=x_adv,
-            num_pre_evaded=NUM_PRE_EVADED,
-            total_attack_population=TOTAL_ATTACKS,
+            num_pre_evaded=evaluator.num_pre_evaded,
+            total_attack_population=evaluator.total_attack_population,
         )
         res["config_name"] = cfg["name"]
         results.append(res)
@@ -480,24 +609,46 @@ def run_train_wgan(
         kitsune_config_path=args.config,
         device=device,
         manifold_shaping=args.manifold_shaping,
+        eps=args.eps,
+        threshold_config_path=args.threshold_config,
+        model_path=args.model_path,
+        seed=args.seed,
+    )
+
+    ckpt_dir = args.checkpoint_dir
+    os.makedirs(ckpt_dir, exist_ok=True)
+    g_name = (
+        "wgan_manifold_generator.pt" if args.manifold_shaping else "wgan_generator.pt"
     )
 
     res = feedback_loop.train_loop(
-        num_epochs=10,
-        batch_size=128,
+        num_epochs=args.train_epochs,
+        batch_size=args.train_batch_size,
         lambda_evade=50.0 if args.manifold_shaping else 30.0,
         lambda_dist=0.01 if args.manifold_shaping else 0.05,
+        save_dir=ckpt_dir,
+        checkpoint_name=g_name,
     )
 
-    # Save Checkpoint
-    ckpt_dir = "data/attack_samples"
-    os.makedirs(ckpt_dir, exist_ok=True)
-    if args.manifold_shaping:
-        g_path = os.path.join(ckpt_dir, "wgan_manifold_generator.pt")
-    else:
-        g_path = os.path.join(ckpt_dir, "wgan_generator.pt")
-    torch.save(feedback_loop.generator.state_dict(), g_path)
+    # Persist the training budget/mode alongside the checkpoint so evaluation
+    # can never silently use a different epsilon.
+    g_path = os.path.join(ckpt_dir, g_name)
+    meta_path = os.path.join(ckpt_dir, g_name.replace(".pt", ".meta.json"))
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "eps": res["eps"],
+                "seed": res["seed"],
+                "mode": "manifold" if args.manifold_shaping else "additive",
+                "best_epoch": res["best_epoch"],
+                "best_selection_asr": res["best_selection_asr"],
+                "test_asr": res["test_asr"],
+            },
+            f,
+            indent=2,
+        )
     print(f"[+] Generator saved to: {g_path}")
+    print(f"[+] Training metadata saved to: {meta_path}")
 
     out_file = os.path.join(
         args.output_dir,
@@ -511,24 +662,88 @@ def run_train_wgan(
     return res
 
 
+def _load_generator(
+    path: str, mode: str, device: torch.device, default_eps: float
+) -> Tuple[PolymorphicGenerator, float]:
+    """Loads a generator checkpoint plus its persisted training budget."""
+    meta_path = path.replace(".pt", ".meta.json")
+    meta: Dict[str, Any] = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    eps = float(meta.get("eps", default_eps))
+    generator = PolymorphicGenerator(
+        feature_dim=100,
+        latent_dim=32,
+        hidden_dims=[128, 256, 128],
+        max_eps=eps,
+        mode=mode,
+    ).to(device)
+    generator.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+    generator.eval()
+    return generator, eps
+
+
+def _sync(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+
+
 def evaluate_attack_suite(
     suite_title: str,
     mal_detected: torch.Tensor,
     torch_model: PyTorchKitNET,
     evaluator: PipelineEvaluator,
     device: torch.device,
+    retries: int = 10,
+    refine_steps: int = 10,
+    default_eps: float = 2.0,
+    deepfool_max_eps: float = 2.0,
+    deepfool_steps: int = 50,
+    deepfool_step: float = 0.1,
+    checkpoint_dir: str = "data/attack_samples",
+    seed: int = 42,
 ) -> Tuple[str, List[List[Any]]]:
     """Evaluates all adversarial paradigms on a given detected malicious subset."""
     summary_rows = []
     headers = [
         "Paradigm / Attack",
         "Perturbation Constraint",
+        "Draws/pkt",
         "Mean Attack RMSE",
         "Conditional ASR (%)",
         "Overall Evasion Rate (%)",
         "Mean Linf",
+        "kNN->benign (norm. L2)",
         "Latency (ms / 1k pkts)",
     ]
+
+    def add_row(
+        name: str,
+        constraint: str,
+        x_adv: torch.Tensor,
+        latency_ms: float,
+        attempts: float = 1.0,
+    ) -> None:
+        res = evaluator.evaluate_evasion(
+            x_orig=mal_detected,
+            x_adv=x_adv,
+            num_pre_evaded=evaluator.num_pre_evaded,
+            total_attack_population=evaluator.total_attack_population,
+        )
+        summary_rows.append(
+            [
+                name,
+                constraint,
+                f"{attempts:.2f}",
+                res["rmse_metrics"]["adversarial_mean"],
+                f"{res['conditional_asr_pct']:.2f}%",
+                f"{res['overall_evasion_rate_pct']:.2f}%",
+                res["perturbation_distances"]["mean_linf"],
+                f"{evaluator.benign_knn_distance(x_adv):.4f}",
+                f"{latency_ms * 1000.0 / max(1, len(mal_detected)):.1f} ms",
+            ]
+        )
 
     # Warmup GPU (both forward inference and autograd backward kernels)
     with torch.no_grad():
@@ -537,95 +752,40 @@ def evaluate_attack_suite(
     _warm_loss = torch_model(_warm_x).sum()
     _warm_loss.backward()
     del _warm_x, _warm_loss
-    if device.type == "cuda":
-        torch.cuda.synchronize()
+    _sync(device)
 
     # 1. Clean unperturbed
-    clean_eval = evaluator.evaluate_evasion(
-        x_orig=mal_detected,
-        x_adv=mal_detected,
-        num_pre_evaded=NUM_PRE_EVADED,
-        total_attack_population=TOTAL_ATTACKS,
-    )
-    summary_rows.append(
-        [
-            "Clean Baseline",
-            "None (Unperturbed)",
-            clean_eval["rmse_metrics"]["adversarial_mean"],
-            f"{clean_eval['conditional_asr_pct']:.2f}%",
-            f"{clean_eval['overall_evasion_rate_pct']:.2f}%",
-            0.0000,
-            "0.0 ms",
-        ]
-    )
+    add_row("Clean Baseline", "None (Unperturbed)", mal_detected, 0.0, 0.0)
 
-    # 2. FGSM eps=0.05
-    if device.type == "cuda":
-        torch.cuda.synchronize()
+    # 2. Envelope projection only (the mechanism behind the manifold attack)
+    _sync(device)
     t0 = time.perf_counter()
-    x_fgsm_05, _ = fgsm_attack(
-        model=torch_model,
-        x=mal_detected,
-        eps=0.05,
-        scales=evaluator.scales,
+    x_clamp = envelope_projection(mal_detected, evaluator.norm_min, evaluator.norm_max)
+    _sync(device)
+    add_row(
+        "Envelope Clamp Only",
+        "Unbudgeted [min, max]",
+        x_clamp,
+        (time.perf_counter() - t0) * 1000.0,
     )
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-    t_fgsm_05 = (time.perf_counter() - t0) * 1000.0
 
-    fgsm_05_eval = evaluator.evaluate_evasion(
-        x_orig=mal_detected,
-        x_adv=x_fgsm_05,
-        num_pre_evaded=NUM_PRE_EVADED,
-        total_attack_population=TOTAL_ATTACKS,
-    )
-    summary_rows.append(
-        [
+    # 3. Single-step FGSM baselines
+    for eps in (0.05, 0.25):
+        _sync(device)
+        t0 = time.perf_counter()
+        x_fgsm, _ = fgsm_attack(
+            model=torch_model, x=mal_detected, eps=eps, scales=evaluator.scales
+        )
+        _sync(device)
+        add_row(
             "Single-Step FGSM",
-            "eps = 0.05 * s",
-            fgsm_05_eval["rmse_metrics"]["adversarial_mean"],
-            f"{fgsm_05_eval['conditional_asr_pct']:.2f}%",
-            f"{fgsm_05_eval['overall_evasion_rate_pct']:.2f}%",
-            fgsm_05_eval["perturbation_distances"]["mean_linf"],
-            f"{t_fgsm_05:.1f} ms",
-        ]
-    )
+            f"eps = {eps:g} * s",
+            x_fgsm,
+            (time.perf_counter() - t0) * 1000.0,
+        )
 
-    # 3. FGSM eps=0.25
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-    t0 = time.perf_counter()
-    x_fgsm_25, _ = fgsm_attack(
-        model=torch_model,
-        x=mal_detected,
-        eps=0.25,
-        scales=evaluator.scales,
-    )
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-    t_fgsm_25 = (time.perf_counter() - t0) * 1000.0
-
-    fgsm_25_eval = evaluator.evaluate_evasion(
-        x_orig=mal_detected,
-        x_adv=x_fgsm_25,
-        num_pre_evaded=NUM_PRE_EVADED,
-        total_attack_population=TOTAL_ATTACKS,
-    )
-    summary_rows.append(
-        [
-            "Single-Step FGSM",
-            "eps = 0.25 * s",
-            fgsm_25_eval["rmse_metrics"]["adversarial_mean"],
-            f"{fgsm_25_eval['conditional_asr_pct']:.2f}%",
-            f"{fgsm_25_eval['overall_evasion_rate_pct']:.2f}%",
-            fgsm_25_eval["perturbation_distances"]["mean_linf"],
-            f"{t_fgsm_25:.1f} ms",
-        ]
-    )
-
-    # 4. Multi-Step PGD (50 steps, Box eps=2.0)
-    if device.type == "cuda":
-        torch.cuda.synchronize()
+    # 4. Multi-Step PGD (box, eps=2.0)
+    _sync(device)
     t0 = time.perf_counter()
     x_pgd, _ = pgd_attack(
         model=torch_model,
@@ -639,31 +799,36 @@ def evaluate_attack_suite(
         norm_min=evaluator.norm_min,
         norm_max=evaluator.norm_max,
     )
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-    t_pgd = (time.perf_counter() - t0) * 1000.0
-
-    pgd_eval = evaluator.evaluate_evasion(
-        x_orig=mal_detected,
-        x_adv=x_pgd,
-        num_pre_evaded=NUM_PRE_EVADED,
-        total_attack_population=TOTAL_ATTACKS,
-    )
-    summary_rows.append(
-        [
-            "Multi-Step PGD (Box)",
-            "50 steps, eps = 2.0 * s",
-            pgd_eval["rmse_metrics"]["adversarial_mean"],
-            f"{pgd_eval['conditional_asr_pct']:.2f}%",
-            f"{pgd_eval['overall_evasion_rate_pct']:.2f}%",
-            pgd_eval["perturbation_distances"]["mean_linf"],
-            f"{t_pgd:.1f} ms",
-        ]
+    _sync(device)
+    add_row(
+        "Multi-Step PGD (Box)",
+        "50 steps, eps = 2.0 * s",
+        x_pgd,
+        (time.perf_counter() - t0) * 1000.0,
     )
 
-    # 5. Multi-Step PGD (50 steps, Manifold Shaping)
-    if device.type == "cuda":
-        torch.cuda.synchronize()
+    # 5. DeepFool (bounded at eps=2.0)
+    _sync(device)
+    t0 = time.perf_counter()
+    x_deepfool, _, _ = deepfool_attack(
+        model=torch_model,
+        x=mal_detected,
+        theta=evaluator.theta,
+        scales=evaluator.scales,
+        max_iter=deepfool_steps,
+        step_size=deepfool_step,
+        max_eps=deepfool_max_eps,
+    )
+    _sync(device)
+    add_row(
+        "DeepFool (bounded)",
+        "50 iters, eps <= 2.0 * s",
+        x_deepfool,
+        (time.perf_counter() - t0) * 1000.0,
+    )
+
+    # 6. Multi-Step PGD (unbudgeted manifold projection)
+    _sync(device)
     t0 = time.perf_counter()
     x_manifold, _ = pgd_attack(
         model=torch_model,
@@ -677,115 +842,134 @@ def evaluate_attack_suite(
         norm_min=evaluator.norm_min,
         norm_max=evaluator.norm_max,
     )
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-    t_manifold = (time.perf_counter() - t0) * 1000.0
-
-    manifold_eval = evaluator.evaluate_evasion(
-        x_orig=mal_detected,
-        x_adv=x_manifold,
-        num_pre_evaded=NUM_PRE_EVADED,
-        total_attack_population=TOTAL_ATTACKS,
-    )
-    summary_rows.append(
-        [
-            "Multi-Step PGD (Manifold)",
-            "50 steps, [min, max]",
-            manifold_eval["rmse_metrics"]["adversarial_mean"],
-            f"{manifold_eval['conditional_asr_pct']:.2f}%",
-            f"{manifold_eval['overall_evasion_rate_pct']:.2f}%",
-            manifold_eval["perturbation_distances"]["mean_linf"],
-            f"{t_manifold:.1f} ms",
-        ]
+    _sync(device)
+    add_row(
+        "Multi-Step PGD (Manifold)",
+        "Unbudgeted [min, max], 50 steps",
+        x_manifold,
+        (time.perf_counter() - t0) * 1000.0,
     )
 
-    # 6. Polymorphic WGAN-GP (Additive Box Generator)
-    ckpt_additive = "data/attack_samples/wgan_generator.pt"
+    # 7. WGAN additive generator: single pass and best-of-k retry loop
+    ckpt_additive = os.path.join(checkpoint_dir, "wgan_generator.pt")
     if os.path.exists(ckpt_additive):
-        gen_add = PolymorphicGenerator(
-            feature_dim=100,
-            latent_dim=32,
-            hidden_dims=[128, 256, 128],
-            max_eps=2.0,
-            mode="additive",
-        ).to(device)
-        gen_add.load_state_dict(
-            torch.load(ckpt_additive, map_location=device, weights_only=True)
+        gen_add, add_eps = _load_generator(
+            ckpt_additive, "additive", device, default_eps
         )
-        gen_add.eval()
-
-        if device.type == "cuda":
-            torch.cuda.synchronize()
+        _sync(device)
         t0 = time.perf_counter()
         with torch.no_grad():
             x_wgan_add = gen_add.mutate_raw(
-                mal_detected, evaluator.norm_min, evaluator.scales, mode="additive"
+                mal_detected,
+                evaluator.norm_min,
+                evaluator.scales,
+                eps=add_eps,
+                mode="additive",
             )
-        if device.type == "cuda":
-            torch.cuda.synchronize()
-        t_wgan_add = (time.perf_counter() - t0) * 1000.0
-
-        wgan_add_eval = evaluator.evaluate_evasion(
-            x_orig=mal_detected,
-            x_adv=x_wgan_add,
-            num_pre_evaded=NUM_PRE_EVADED,
-            total_attack_population=TOTAL_ATTACKS,
-        )
-        summary_rows.append(
-            [
-                "Polymorphic WGAN-GP (Box)",
-                "eps = 2.0 * s, closed loop",
-                wgan_add_eval["rmse_metrics"]["adversarial_mean"],
-                f"{wgan_add_eval['conditional_asr_pct']:.2f}%",
-                f"{wgan_add_eval['overall_evasion_rate_pct']:.2f}%",
-                wgan_add_eval["perturbation_distances"]["mean_linf"],
-                f"{t_wgan_add:.1f} ms",
-            ]
+        _sync(device)
+        add_row(
+            "Polymorphic WGAN-GP (Box, 1 draw)",
+            f"eps = {add_eps:g} * s",
+            x_wgan_add,
+            (time.perf_counter() - t0) * 1000.0,
         )
 
-    # 7. Polymorphic WGAN-GP (Manifold Shaping Generator)
-    ckpt_manifold = "data/attack_samples/wgan_manifold_generator.pt"
+        _sync(device)
+        t0 = time.perf_counter()
+        x_wgan_k, _, attempts = wgan_best_of_k(
+            gen_add,
+            torch_model,
+            mal_detected,
+            evaluator.theta,
+            evaluator.norm_min,
+            evaluator.scales,
+            eps=add_eps,
+            mode="additive",
+            max_retries=retries,
+        )
+        _sync(device)
+        add_row(
+            "Polymorphic WGAN-GP (Box, best-of-k)",
+            f"eps = {add_eps:g} * s, retry until theta",
+            x_wgan_k,
+            (time.perf_counter() - t0) * 1000.0,
+            attempts=float(attempts.float().mean().item()),
+        )
+
+        _sync(device)
+        t0 = time.perf_counter()
+        x_wgan_r, _, refine_attempts = wgan_refine(
+            gen_add,
+            torch_model,
+            mal_detected,
+            evaluator.theta,
+            evaluator.norm_min,
+            evaluator.scales,
+            eps=add_eps,
+            steps=refine_steps,
+            mode="additive",
+        )
+        _sync(device)
+        add_row(
+            "Polymorphic WGAN-GP (Box, feedback refine)",
+            f"eps = {add_eps:g} * s x {refine_steps} steps (aggregate)",
+            x_wgan_r,
+            (time.perf_counter() - t0) * 1000.0,
+            attempts=float(refine_attempts.float().mean().item()),
+        )
+
+    # 8. Trained manifold generator (unbudgeted envelope + learned jitter)
+    ckpt_manifold = os.path.join(checkpoint_dir, "wgan_manifold_generator.pt")
     if os.path.exists(ckpt_manifold):
-        gen_man = PolymorphicGenerator(
-            feature_dim=100,
-            latent_dim=32,
-            hidden_dims=[128, 256, 128],
-            max_eps=2.0,
-            mode="manifold",
-        ).to(device)
-        gen_man.load_state_dict(
-            torch.load(ckpt_manifold, map_location=device, weights_only=True)
+        gen_man, man_eps = _load_generator(
+            ckpt_manifold, "manifold", device, default_eps
         )
-        gen_man.eval()
-
-        if device.type == "cuda":
-            torch.cuda.synchronize()
+        _sync(device)
         t0 = time.perf_counter()
         with torch.no_grad():
             x_wgan_man = gen_man.mutate_raw(
-                mal_detected, evaluator.norm_min, evaluator.scales, mode="manifold"
+                mal_detected,
+                evaluator.norm_min,
+                evaluator.scales,
+                eps=man_eps,
+                mode="manifold",
             )
-        if device.type == "cuda":
-            torch.cuda.synchronize()
-        t_wgan_man = (time.perf_counter() - t0) * 1000.0
+        _sync(device)
+        add_row(
+            "WGAN-GP (Manifold, trained)",
+            "Unbudgeted learned target, 1 draw",
+            x_wgan_man,
+            (time.perf_counter() - t0) * 1000.0,
+        )
 
-        wgan_man_eval = evaluator.evaluate_evasion(
-            x_orig=mal_detected,
-            x_adv=x_wgan_man,
-            num_pre_evaded=NUM_PRE_EVADED,
-            total_attack_population=TOTAL_ATTACKS,
+    # 9. Untrained manifold generator ablation
+    seed_everything(seed + 999)
+    gen_untrained = PolymorphicGenerator(
+        feature_dim=100,
+        latent_dim=32,
+        hidden_dims=[128, 256, 128],
+        max_eps=default_eps,
+        mode="manifold",
+    ).to(device)
+    gen_untrained.eval()
+    _sync(device)
+    t0 = time.perf_counter()
+    with torch.no_grad():
+        x_wgan_untrained = gen_untrained.mutate_raw(
+            mal_detected,
+            evaluator.norm_min,
+            evaluator.scales,
+            eps=default_eps,
+            mode="manifold",
         )
-        summary_rows.append(
-            [
-                "Polymorphic WGAN-GP (Manifold)",
-                "Envelope Shaping, single pass",
-                wgan_man_eval["rmse_metrics"]["adversarial_mean"],
-                f"{wgan_man_eval['conditional_asr_pct']:.2f}%",
-                f"{wgan_man_eval['overall_evasion_rate_pct']:.2f}%",
-                wgan_man_eval["perturbation_distances"]["mean_linf"],
-                f"{t_wgan_man:.1f} ms",
-            ]
-        )
+    _sync(device)
+    add_row(
+        "WGAN-GP (Manifold, untrained)",
+        "Same forward, random weights",
+        x_wgan_untrained,
+        (time.perf_counter() - t0) * 1000.0,
+    )
+    seed_everything(seed)
 
     md_table = format_markdown_table(headers, summary_rows)
     print(f"\n### {suite_title}\n")
@@ -825,7 +1009,19 @@ def run_evaluate_all(
             feats_mmap, evaluator, args.samples, device, phase=phase_key
         )
         md_table, _ = evaluate_attack_suite(
-            title, mal_subset, torch_model, evaluator, device
+            title,
+            mal_subset,
+            torch_model,
+            evaluator,
+            device,
+            retries=args.retries,
+            refine_steps=args.refine_steps,
+            default_eps=args.eps,
+            deepfool_max_eps=args.deepfool_max_eps,
+            deepfool_steps=args.deepfool_steps,
+            deepfool_step=args.deepfool_step,
+            checkpoint_dir=args.checkpoint_dir,
+            seed=args.seed,
         )
         combined_markdown.append(f"## {title}\n\n{md_table}\n")
 
@@ -839,6 +1035,7 @@ def run_evaluate_all(
 
 def main() -> None:
     args = parse_args()
+    seed_everything(args.seed)
     device = get_device(args.device)
 
     if args.mode == "train_wgan":

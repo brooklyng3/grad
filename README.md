@@ -116,4 +116,5 @@ black --check src tests run_pipeline.py scripts
 - `docs/implementation_plan.md` — milestone plan
 - `docs/detailed/phase_0_detailed.md` … `phase_5_detailed.md` — per-phase logs
 - `docs/detailed/phase_6_detailed.md` — review remediation log
-- `docs/review_findings.md` — the independent review that motivated Phase 6
+- `docs/review_findings.md` — the first independent review
+- `docs/final_review_findings.md` — the final review and remediation record

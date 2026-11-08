@@ -6,13 +6,21 @@
 **Constraint:** No repository source or artifact was modified during the review. Test and pipeline outputs were written to `/tmp`; checkpoint mtimes were verified unchanged.
 
 > **Remediation status (2026-11-08): all findings addressed.** The fixes, reasoning, diffs, and post-fix results are documented in `docs/overview/phase_6_overview.md` and `docs/detailed/phase_6_detailed.md`. The numbers below are the pre-fix state and are retained as the review record.
+>
+> **Post-final-review correction (2026-11-09):** the Phase 6 `run_pipeline.py`
+> was omitted from commit `cf27792` even though the other fixes landed. It has
+> been restored and extended; the sampler, clean split, metadata, retry rows,
+> checkpoint naming, population constants, latency scaling and tests are now in
+> the delivered file. See `docs/final_review_findings.md` section 8 and
+> `phase_6_detailed.md` section 16. The "Fixed" statuses below now hold for the
+> committed code, not only the working tree.
 
 | Finding | Status |
 |---|---|
 | F1 manifold result is a clamp | Fixed — clamp-only and untrained-generator ablation rows added; attribution corrected |
 | F2 epsilon mismatch / overfitting | Fixed — shared ε persisted in checkpoint metadata; disjoint stratified training split; holdout model selection; `n_critic` executed |
 | F3 no retry-until-bypass loop | Fixed — best-of-k retry attack added and benchmarked |
-| F4 methodology weaknesses | Fixed — separate calibration/validation splits, seeds, unguarded tests, evasion assertions, 28 tests |
+| F4 methodology weaknesses | Fixed — separate calibration/validation splits, seeds, unguarded tests, evasion assertions, 36 tests |
 | F5 declarative physical constraints | Fixed — MTU/IAT bounds enforced; TTL limitation documented |
 | F6 stale/missing artifacts | Fixed — reports regenerated, README and Phase 6 docs added, links repaired |
 | F7 Cython unused | Fixed — opt-in `KITSUNE_USE_CYTHON=1` path wired; default documented |
@@ -63,7 +71,7 @@ Severity: **Critical** = invalidates a headline claim; **High** = invalidates a 
 The post-hoc `clamp` was removed from the manifold forward; the generator now
 learns the target step itself. Post-fix numbers: untrained 0% ASR (RMSE
 5.63/15.05), trained 99.9–100% (RMSE 0.078/0.037), which **beats the clamp
-baseline** (0.114/0.109). Benign-kNN distance also improves (0.86/0.62 vs clamp
+baseline** (0.114/0.109). Benign-kNN distance also improves (0.67/0.62 vs clamp
 0.91/0.87). The clamp row remains for attribution. See `phase_6_detailed.md`
 section 15.
 
@@ -106,10 +114,10 @@ The L∞ column also shows the manifold attack is **unbudgeted**: mean 8.8 norma
 **Status:** Fixed for consistency, but the attack remains budget-limited.
 Training and evaluation share `--eps`, persisted in `*.meta.json`; the split is
 disjoint and stratified; the best epoch is selected by held-out ASR; `n_critic`
-is executed. ASR stays 1.90% scanning / 0.00% flood. Independent draws had no
+is executed. ASR stays 1.60% scanning / 0.00% flood. Independent draws had no
 variance (conditional mode collapse), so a feedback-refinement attack was added:
-10 steps raise scanning to 3.90% and cut flood RMSE to 5.38, but not to the
-reviewer's predicted >80% (aggregate L∞ ≈ 11.5/19.8, not ε = 2).
+10 steps raise scanning to 3.80% and cut flood RMSE to 5.19, but not to the
+reviewer's predicted >80% (aggregate L∞ ≈ 10.4/19.7, not ε = 2).
 
 **Where:**
 
@@ -158,7 +166,7 @@ The screenshot objective and the plan mermaid (`docs/implementation_plan.md:30-3
 
 **Status:** Fixed. Benign calibration/validation are disjoint (FPR 0.096%
 out-of-sample); attack train/eval splits are disjoint; all runs are seeded;
-guarded test assertions removed; evasion assertions added (28 tests pass).
+guarded test assertions removed; evasion assertions added (36 tests pass).
 
 1. **FPR is in-sample by construction.** θ is the 99.9th percentile of 66,621 benign packets, then FPR is counted on those same packets (`src/defender/eval_threshold.py:91-125`; `run_pipeline.py:245-248`). FPR = 0.1006% is arithmetic, not independent validation. `tests/test_threshold.py:28` asserts FPR stays near 0.1%, which it must.
 2. **Phase A is not a holdout for the WGAN.** The scanning evaluation range is the first 10,000 attacks (`run_pipeline.py:198-205`), entirely inside the 20,000-attack WGAN training pool.

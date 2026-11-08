@@ -140,7 +140,8 @@ both training and evaluation. After training, `run_train_wgan` writes:
   "seed": 42,
   "mode": "additive",
   "best_epoch": 10,
-  "best_holdout_asr": 0.1
+  "best_selection_asr": 0.1,
+  "test_asr": 0.0
 }
 ```
 
@@ -195,50 +196,55 @@ for _ in range(self.n_critic):
 **Reasoning:** WGAN-GP requires multiple critic steps between generator steps
 to keep the critic near its Lipschitz optimum.
 
-### 5.3 Holdout evaluation and best-checkpoint selection
+### 5.3 Held-out selection and untouched test split
 
-Each epoch scores a 1,000-packet disjoint holdout and records ASR/mean RMSE:
+The evaluation split is divided into two disjoint halves: a **selection**
+holdout used every epoch, and an **untouched test** holdout scored once at the
+end. Each epoch records selection ASR/mean RMSE:
 
 ```python
-holdout_adv = self.generator.mutate_raw(x_holdout, ...)
-holdout_rmse = self.evaluator.score_batches(holdout_adv)
+select_adv = self.generator.mutate_raw(x_select, ...)
+select_rmse = self.evaluator.score_batches(select_adv)
 ...
-if holdout_asr > best_asr or (holdout_asr == best_asr and holdout_mean < best_mean):
-    best_asr, best_mean, best_epoch = holdout_asr, holdout_mean, epoch
+if select_asr > best_asr or (select_asr == best_asr and select_mean < best_mean):
+    best_asr, best_mean, best_epoch = select_asr, select_mean, epoch
     best_state = copy.deepcopy(self.generator.state_dict())
 ```
 
-The best state is restored before final evaluation and saving. The final
-evaluation uses the holdout, not the training pool.
+The best state is restored before final evaluation and saving. Final evaluation
+uses `x_test`, never used for model selection.
 
 **Reasoning:** the old final evaluation sliced `x_mal_raw[:1000]`, i.e. training
-samples, while the doc called it a holdout. Model selection on a disjoint split
-also prevents shipping an overfit epoch.
+samples, while the doc called it a holdout. Selection on a disjoint split and a
+separate test half prevent both training leakage and selection bias.
 
 ### 5.4 Training telemetry (seeded)
 
 Additive, ε = 2.0, 10 epochs:
 
 ```text
-Loaded 10,000 strictly detected attack samples (scan=3,334, spread=16,666).
-Holdout detected attacks:  1,000 (disjoint split)
+Loaded 10,000 strictly detected attack samples (scan=5,000, spread=5,000).
+Selection holdout: 1,000 | untouched test holdout: 1,000 (disjoint halves)
 Epoch [01] | Loss C: -8.3121 | Loss G: 321.3015 | Batch ASR: 0.04% | Holdout ASR: 0.00%
 Epoch [05] | Loss C: -37.2324 | Loss G: 324.6055 | Batch ASR: 0.24% | Holdout ASR: 0.10%
 Epoch [10] | Loss C: -77.4663 | Loss G: 344.2202 | Batch ASR: 0.26% | Holdout ASR: 0.10%
-Best holdout ASR 0.10% at epoch 10.
+Best selection ASR 0.10% at epoch 8. Untouched test: 0.00%, RMSE 13.1033.
 ```
 
 Manifold, ε = 2.0, 10 epochs:
 
 ```text
-Epoch [01] | Loss C: -2.7900 | Loss G: 1.6162 | Batch ASR: 100.00% | Holdout ASR: 100.00%
-Epoch [10] | Loss C: -0.9521 | Loss G: -1.5368 | Batch ASR: 100.00% | Holdout ASR: 100.00%
-Best holdout ASR 100.00% at epoch 6.
+Epoch [01] | Loss C: -6.3421 | Loss G: 133.9979 | Batch ASR: 11.56% | Holdout ASR: 54.70%
+Epoch [05] | Loss C: -0.6948 | Loss G: -3.0472 | Batch ASR: 99.99% | Holdout ASR: 100.00%
+Epoch [10] | Loss C: -0.5699 | Loss G: -3.5101 | Batch ASR: 99.97% | Holdout ASR: 100.00%
+Best selection ASR 100.00% at epoch 8. Untouched test: 100.00%, RMSE 0.0397.
 ```
 
 The additive critic loss magnitude grows to -77; performance plateaus at 0.10%
-holdout. The manifold generator is effectively at ceiling from epoch 1, again
-demonstrating that the envelope clamp dominates.
+selection ASR and 0.00% on the untouched test half. The manifold generator
+learns quickly (54.7% selection ASR after one epoch) and saturates by epoch 5.
+The pool print now reports the actual post-detection 5,000/5,000 composition,
+and the final score is measured on a half never used for model selection.
 
 ---
 
@@ -405,7 +411,7 @@ Suite result:
 
 ```text
 ..........................                                               [100%]
-28 passed in 6.69s
+36 passed in 23.50s
 ```
 
 Formatting/lint:
@@ -465,13 +471,13 @@ Manifold Shaping (50 steps) ASR= 100.0 ER= 100.0
 | Envelope clamp only | 1.00 | 0.1136 | 100.00% | 100.00% | 12.9735 |
 | FGSM ε=0.05 | 1.00 | 5.3076 | 0.00% | 11.85% | 0.0500 |
 | FGSM ε=0.25 | 1.00 | 5.1910 | 0.00% | 11.85% | 0.2500 |
-| PGD box ε=2 | 1.00 | 4.1601 | 2.30% | 13.88% | 1.9991 |
+| PGD box ε=2 | 1.00 | 4.1601 | 2.30% | 13.88% | 1.9983 |
 | DeepFool ε≤2 | 1.00 | 4.5108 | 0.00% | 11.85% | 1.9683 |
 | PGD manifold | 1.00 | 0.0909 | 100.00% | 100.00% | 13.0325 |
-| WGAN box, 1 draw | 1.00 | 4.1836 | 1.90% | 13.52% | 1.9990 |
-| WGAN box, best-of-10 | 9.83 | 4.1807 | 1.90% | 13.52% | 1.9991 |
-| WGAN box, 10-step refine | 9.67 | 1.1778 | 3.90% | 15.29% | 11.4744 |
-| WGAN manifold, trained | 1.00 | 0.0782 | 99.90% | 99.91% | 13.8111 |
+| WGAN box, 1 draw | 1.00 | 4.1925 | 1.60% | 13.52% | 1.9981 |
+| WGAN box, best-of-10 | 9.85 | 4.1883 | 1.60% | 13.52% | 1.9983 |
+| WGAN box, 10-step refine | 9.68 | 1.5275 | 3.80% | 15.29% | 10.4344 |
+| WGAN manifold, trained | 1.00 | 0.0647 | 100.00% | 100.00% | 13.9198 |
 | WGAN manifold, untrained | 1.00 | 5.6284 | 0.00% | 11.85% | 6.1065 |
 
 ### Phase B — volumetric flood, 1,000 detected holdout packets
@@ -485,10 +491,10 @@ Manifold Shaping (50 steps) ASR= 100.0 ER= 100.0
 | PGD box ε=2 | 1.00 | 12.2761 | 0.00% | 11.85% | 2.0000 |
 | DeepFool ε≤2 | 1.00 | 12.9098 | 0.00% | 11.85% | 2.0000 |
 | PGD manifold | 1.00 | 0.0896 | 100.00% | 100.00% | 34.9754 |
-| WGAN box, 1 draw | 1.00 | 12.2905 | 0.00% | 11.85% | 1.9999 |
-| WGAN box, best-of-10 | 10.00 | 12.2890 | 0.00% | 11.85% | 1.9999 |
-| WGAN box, 10-step refine | 10.00 | 5.3781 | 0.00% | 11.85% | 19.8139 |
-| WGAN manifold, trained | 1.00 | 0.0367 | 100.00% | 100.00% | 35.6243 |
+| WGAN box, 1 draw | 1.00 | 12.2900 | 0.00% | 11.85% | 1.9998 |
+| WGAN box, best-of-10 | 10.00 | 12.2890 | 0.00% | 11.85% | 1.9998 |
+| WGAN box, 10-step refine | 10.00 | 5.1945 | 0.00% | 11.85% | 19.7303 |
+| WGAN manifold, trained | 1.00 | 0.0391 | 100.00% | 100.00% | 35.3428 |
 | WGAN manifold, untrained | 1.00 | 15.0501 | 0.00% | 11.85% | 15.8726 |
 
 ### Clean detection (validation split)
@@ -511,16 +517,16 @@ Benign kNN baseline (normalised L2): 0.1383
    learned network, not the projection, is doing the work.
 2. **Realism moves in the right direction but is not solved.** Mean nearest-
    benign distance is 0.138 for benign-to-benign, 0.91/0.87 for clamp,
-   and 0.86/0.62 for the trained generator. Training improves manifold
+   and 0.67/0.62 for the trained generator. Training improves manifold
    proximity; the attack still is not a true benign sample. The critic is not
    used as the metric because it is trained against the generator and is
    therefore gameable; kNN is independent.
 3. **The budgeted WGAN is no longer zero on scanning**, rising from the broken
-   checkpoint's 0.00% to 1.90%. It remains 0.00% on flood, consistent with the
+   checkpoint's 0.00% to 1.60%. It remains 0.00% on flood, consistent with the
    ε = 2 box being unable to bridge a ~35× dynamic range.
 4. **Best-of-k does not help because output variance is near zero**, confirming
    conditional mode collapse. Ten feedback-refinement steps raise scanning ASR
-   to 3.90% and cut flood RMSE to 5.38, but total L∞ grows to 11.5/19.8
+   to 3.80% and cut flood RMSE to 5.19, but total L∞ grows to 10.4/19.7
    normalised units. The reviewer's predicted >80% was not reached with a
    generator trained for one step.
 5. **DeepFool is ineffective here.** At ε ≤ 2 it matches PGD box on flood (0%)
@@ -554,7 +560,12 @@ New:
 
 - `src/utils/data_splits.py`
 - `src/utils/seed.py`
+- `tests/test_cli.py`
+- `tests/test_kitnet.py`
+- `requirements.txt`
 - `README.md`
+- `docs/review_findings.md`
+- `docs/final_review_findings.md`
 - `docs/overview/phase_6_overview.md`
 - `docs/detailed/phase_6_detailed.md`
 
@@ -596,7 +607,7 @@ A second review round raised two substantive concerns:
 2. Best-of-k had identical ASR across draws because the latent `z` is dominated
    by the 100 large conditional features (conditional mode collapse); feeding
    the mutated vector back for K refinement steps was predicted to raise ASR
-   from 1.90% to >80%.
+   from 1.60% to >80%.
 
 ### 15.1 Validation of the clamp criticism
 
@@ -639,17 +650,17 @@ clamp in normalised space.
 
 ### 15.3 Retraining and controls
 
-Retrained with the same protocol (seed 42, ε = 2.0, 10 epochs, best holdout
-epoch 4). The untrained control uses seed 999 and the same forward.
+Retrained with the same protocol (seed 42, ε = 2.0, 10 epochs, best selection
+epoch 8). The untrained control uses seed 999 and the same forward.
 
 | Phase | Method | ASR | Mean RMSE | kNN→benign |
 |---|---|---:|---:|---:|
 | A | Clamp | 100% | 0.1136 | 0.9096 |
 | A | Manifold, untrained | 0.00% | 5.6284 | 32.2566 |
-| A | Manifold, trained | 99.90% | **0.0782** | **0.8572** |
+| A | Manifold, trained | 100.00% | **0.0647** | **0.6739** |
 | B | Clamp | 100% | 0.1092 | 0.8739 |
 | B | Manifold, untrained | 0.00% | 15.0501 | 83.0818 |
-| B | Manifold, trained | 100% | **0.0367** | **0.6228** |
+| B | Manifold, trained | 100% | **0.0391** | **0.6161** |
 
 The trained generator now beats the clamp on both RMSE (1.5× scan, 3× flood)
 and benign proximity, while the untrained generator fails completely. This
@@ -662,8 +673,8 @@ to K steps, retaining only improvements. Ten steps:
 
 | Phase | 1 draw ASR / RMSE | 10-step refine ASR / RMSE | Aggregate L∞ |
 |---|---:|---:|---:|
-| A | 1.90% / 4.1836 | **3.90% / 1.1778** | 11.47 |
-| B | 0.00% / 12.2905 | **0.00% / 5.3781** | 19.81 |
+| A | 1.60% / 4.1925 | **3.80% / 1.5275** | 10.43 |
+| B | 0.00% / 12.2900 | **0.00% / 5.1945** | 19.81 |
 
 Mode collapse is real — independent draws gave identical RMSE — and refinement
 materially lowers reconstruction error, but the predicted >80% ASR does not
@@ -691,3 +702,60 @@ The reviewer's stronger claim — refinement should reach >80% — is not
 supported by the measured one-step-trained generator. It is documented as a
 negative result rather than tuned to the expected number. Unrolled training is
 left as a follow-up.
+
+---
+
+## 16. Final-review remediation (`docs/final_review_findings.md`)
+
+The final review found that `run_pipeline.py` was omitted from commit `cf27792`
+even though every other Phase 6 file was committed. The reports were genuine
+but produced by an uncommitted working copy, so the delivered CLI could not
+reproduce them. This section records the repair.
+
+### 16.1 CLI recovery
+
+The missing edits were recovered from the Phase 6 session transcript by
+replaying all 40 file edits (including six intervening `black` passes) against
+the `d0322b1` version. Duplicated edit pairs produced repeated `--refine_steps`
+and `--deepfool_*` argument definitions; these were deduplicated. Recovered
+capabilities now verified in the executable file:
+
+- `--seed`, `--eps`, `--retries`, `--refine_steps`, `--train_epochs`,
+  `--train_batch_size`, `--deepfool_max_eps`, `--deepfool_steps`,
+  `--deepfool_step`, `--checkpoint_dir`
+- eval-split sampler for both phases
+- validation-only clean evaluation and benign-kNN baseline
+- metadata write/read via `_load_generator`
+- clamp, untrained, DeepFool, best-of-k, refinement, and kNN rows
+- per-1,000 latency scaling and small-sample shortage warnings
+
+### 16.2 Remaining review findings
+
+| Finding | Change |
+|---|---|
+| Checkpoint clobber | Mode-specific names and `--checkpoint_dir`; one-epoch manifold temp run wrote only `wgan_manifold_generator.pt`, `wgan_manifold_critic.pt`, meta and summary |
+| Ignored train args | Threshold/model/eps/seed/epochs/batch/checkpoint dir all passed to the loop |
+| Pool composition | Early window widened to 30k attacks; detection applied per regime before a real 50/50 take; print reports 5,000/5,000 |
+| Holdout reuse | Selection and test are disjoint halves; final ASR uses the untouched half |
+| Weak tests | Added `tests/test_cli.py` and `tests/test_kitnet.py`; theta loaded from config; full suite 36 passing |
+| Unused config | Config values now provide CLI defaults; dead keys removed |
+| Hard-coded population | Read from threshold attack metadata into evaluator attributes |
+| Latency label | Scaled by `1000 / n`; scanning candidate floor is 10k; shortage warning |
+| Missing files | `requirements.txt` and `tests/test_kitnet.py` added |
+| Stale docs | Test counts, Phase 4 epoch note, telemetry, and review status updated |
+
+### 16.3 Verification
+
+```text
+python run_pipeline.py --help                     all Phase 6 flags present
+pytest -q                                          36 passed
+flake8 src tests run_pipeline.py scripts           exit 0
+black --check src tests run_pipeline.py scripts    clean
+evaluate_all --samples 1000 --seed 42              initial RMSE 5.3381;
+                                                   WGAN box 1.60% / 4.1925
+evaluate_clean --seed 42                           86,853 samples; FPR 0.0961%;
+                                                   kNN 0.1383
+train_wgan --epochs 1 --checkpoint_dir /tmp        mode-specific files only
+```
+
+The committed Phase A report is again reproducible from the delivered CLI.

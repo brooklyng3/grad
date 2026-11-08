@@ -33,7 +33,10 @@ def defender_setup():
     model.eval()
 
     norm_min, norm_max, scales = model.get_global_feature_bounds(as_torch=True)
-    theta = 0.453419
+    with open("data/processed/threshold_config.yaml", "r") as f:
+        import yaml
+
+        theta = float(yaml.safe_load(f)["threshold"])
 
     # Load detected malicious samples for test fixtures
     features = np.load("data/processed/mirai_features.npy", mmap_mode="r")

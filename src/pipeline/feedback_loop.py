@@ -27,7 +27,7 @@ import copy
 import os
 import sys
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import numpy as np
 import torch
 import yaml
@@ -86,6 +86,9 @@ class AdversarialFeedbackLoop:
         with open(threshold_config_path, "r") as f:
             thresh_meta = yaml.safe_load(f)
         self.theta = float(thresh_meta["threshold"])
+        attack_meta = thresh_meta.get("attack_metrics", {})
+        self.num_pre_evaded = int(attack_meta.get("evaded_count", 76123))
+        self.total_attacks = int(attack_meta.get("num_evaluated", 642516))
 
         self.norm_min, self.norm_max, self.scales = (
             self.defender.get_global_feature_bounds(as_torch=True)
@@ -165,30 +168,52 @@ class AdversarialFeedbackLoop:
         #    half spread across the full attack population.
         all_attacks = np.where(labels == 1)[0]
         train_attacks = attack_indices_for_split(all_attacks, "train")
-        early = train_attacks[train_attacks < ATTACK_START + 10000]
-        later = train_attacks[train_attacks >= ATTACK_START + 10000]
+        # A 30k-packet "early" window gives enough candidates to supply half
+        # the final detected pool even though the onset ramps up slowly.
+        early = train_attacks[train_attacks < ATTACK_START + 30000]
+        later = train_attacks[train_attacks >= ATTACK_START + 30000]
 
         pool_size = min(len(train_attacks), max_malicious_samples * 2)
-        n_early = min(len(early), pool_size // 2)
+        n_early = min(len(early), max_malicious_samples)
         n_late = max(0, pool_size - n_early)
-        chosen = np.concatenate(
-            [early[:n_early], self._spread(later, min(n_late, len(later)))]
-        )
-        chosen.sort()
 
-        candidate_attacks = torch.tensor(
-            features[chosen], dtype=torch.float32, device=self.device
+        early_candidates = torch.tensor(
+            features[early[:n_early]], dtype=torch.float32, device=self.device
+        )
+        later_candidates = torch.tensor(
+            features[self._spread(later, min(n_late, len(later)))],
+            dtype=torch.float32,
+            device=self.device,
         )
         with torch.no_grad():
-            scores = self.evaluator.score_batches(candidate_attacks)
-        detected_mask = scores > self.theta
-        x_mal_detected_raw = candidate_attacks[detected_mask][:max_malicious_samples]
+            early_scores = self.evaluator.score_batches(early_candidates)
+            later_scores = self.evaluator.score_batches(later_candidates)
+        detected_early = early_candidates[early_scores > self.theta]
+        detected_later = later_candidates[later_scores > self.theta]
+
+        # Enforce an actual 50/50 post-detection composition.  Filtering can
+        # otherwise skew the pool because detection rates differ by regime.
+        half = max_malicious_samples // 2
+        take_early = detected_early[:half]
+        take_later = detected_later[:half]
+        remaining = max_malicious_samples - take_early.size(0) - take_later.size(0)
+        if remaining > 0:
+            spare = torch.cat(
+                [
+                    detected_later[take_later.size(0) :],
+                    detected_early[take_early.size(0) :],
+                ]
+            )
+            fill = spare[:remaining]
+            take_later = torch.cat([take_later, fill])
+
+        x_mal_detected_raw = torch.cat([take_early, take_later])
         x_mal_detected_norm = (x_mal_detected_raw - self.norm_min) / self.scales
 
         print(f"Loaded {x_benign_norm.size(0):,} benign training samples.")
         print(
             f"Loaded {x_mal_detected_norm.size(0):,} strictly detected attack "
-            f"samples (scan={n_early:,}, spread={n_late:,})."
+            f"samples (scan={take_early.size(0):,}, spread={take_later.size(0):,})."
         )
 
         return {
@@ -197,12 +222,23 @@ class AdversarialFeedbackLoop:
             "x_mal_detected_norm": x_mal_detected_norm,
         }
 
-    def load_holdout(self, labels: np.ndarray, max_samples: int = 1000) -> torch.Tensor:
-        """Load a detected attack batch from the disjoint evaluation split."""
+    def load_holdout(
+        self,
+        labels: np.ndarray,
+        max_samples: int = 1000,
+        block: Tuple[float, float] = (0.0, 0.5),
+    ) -> torch.Tensor:
+        """Load a detected attack batch from a block of the evaluation split.
+
+        Selection and final test use disjoint halves so model selection does
+        not consume the reported test set.
+        """
         features = np.load(self.kit_cfg["data"]["processed_features"], mmap_mode="r")
         all_attacks = np.where(labels == 1)[0]
         eval_attacks = attack_indices_for_split(all_attacks, "eval")
-        candidates = self._spread(eval_attacks, max_samples * 3)
+        start = int(len(eval_attacks) * block[0])
+        end = int(len(eval_attacks) * block[1])
+        candidates = self._spread(eval_attacks[start:end], max_samples * 3)
         x = torch.tensor(features[candidates], dtype=torch.float32, device=self.device)
         with torch.no_grad():
             scores = self.evaluator.score_batches(x)
@@ -245,8 +281,12 @@ class AdversarialFeedbackLoop:
             labels = np.array(
                 [int(line.strip()) for line in f if line.strip()], dtype=np.int32
             )
-        x_holdout = self.load_holdout(labels, max_samples=holdout_size)
-        print(f"Holdout detected attacks:  {x_holdout.size(0):,} (disjoint split)")
+        x_select = self.load_holdout(labels, max_samples=holdout_size, block=(0.0, 0.5))
+        x_test = self.load_holdout(labels, max_samples=holdout_size, block=(0.5, 1.0))
+        print(
+            f"Selection holdout: {x_select.size(0):,} | "
+            f"untouched test holdout: {x_test.size(0):,} (disjoint halves)"
+        )
 
         num_samples = min(x_benign_norm.size(0), x_mal_norm.size(0))
         num_batches = num_samples // batch_size
@@ -314,7 +354,7 @@ class AdversarialFeedbackLoop:
             # Holdout evaluation and best-checkpoint tracking
             with torch.no_grad():
                 holdout_adv = self.generator.mutate_raw(
-                    x_holdout,
+                    x_select,
                     self.norm_min,
                     self.scales,
                     eps=self.eps,
@@ -362,16 +402,16 @@ class AdversarialFeedbackLoop:
         total_time = time.time() - start_time
         print("-" * 70)
         print(f"Feedback loop training complete in {total_time:.2f}s!")
-        print(f"Best holdout ASR {best_asr:.2f}% at epoch {best_epoch}.")
+        print(f"Best selection ASR {best_asr:.2f}% at epoch {best_epoch}.")
 
         if best_state is not None:
             self.generator.load_state_dict(best_state)
 
-        # Final evaluation on the disjoint holdout
-        print("\nEvaluating best generator on the holdout split...")
+        # Final evaluation on the untouched test half
+        print("\nEvaluating best generator on the untouched test holdout...")
         with torch.no_grad():
             final_adv_raw = self.generator.mutate_raw(
-                x_holdout,
+                x_test,
                 self.norm_min,
                 self.scales,
                 eps=self.eps,
@@ -379,14 +419,14 @@ class AdversarialFeedbackLoop:
             )
 
         eval_summary = self.evaluator.evaluate_evasion(
-            x_orig=x_holdout,
+            x_orig=x_test,
             x_adv=final_adv_raw,
-            num_pre_evaded=76123,
-            total_attack_population=642516,
+            num_pre_evaded=self.num_pre_evaded,
+            total_attack_population=self.total_attacks,
         )
 
         print("-" * 70)
-        print("FINAL EVALUATION SUMMARY (DISJOINT HOLDOUT):")
+        print("FINAL EVALUATION SUMMARY (UNTOUCHED TEST HOLDOUT):")
         print(
             f"  Conditional ASR on Detected:  "
             f"{eval_summary['conditional_asr_pct']:.2f}%"
@@ -418,8 +458,11 @@ class AdversarialFeedbackLoop:
 
         return {
             "eval_summary": eval_summary,
+            "test_summary": eval_summary,
+            "test_asr": eval_summary["conditional_asr_pct"],
             "history": history,
             "best_epoch": best_epoch,
+            "best_selection_asr": best_asr,
             "best_holdout_asr": best_asr,
             "eps": self.eps,
             "seed": self.seed,

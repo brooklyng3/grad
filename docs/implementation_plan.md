@@ -142,7 +142,7 @@ flowchart TD
 - **Tasks Completed:**
   1. Implemented `src/utils/metrics.py`: Detection metrics (ROC-AUC, Precision, Recall/TPR, FPR, F1, Accuracy), distortion trade-off curves, markdown tables, JSON/CSV exporters.
   2. Implemented root CLI runner `run_pipeline.py`: Supports 5 execution modes (`evaluate_clean`, `fgsm_sweep`, `pgd_attack`, `train_wgan`, `evaluate_all`).
-  3. Implemented `tests/test_metrics.py` (all 22 project tests passing).
+  3. Implemented `tests/test_metrics.py` (22 tests at the time; 36 after final remediation).
   4. Generated comprehensive benchmark reports in `reports/`.
   5. Documented in `docs/overview/phase_5_overview.md` and `docs/detailed/phase_5_detailed.md`.
 
@@ -169,3 +169,6 @@ flowchart TD
      all reports, added a README, and repaired documentation links.
   8. Documented in `docs/overview/phase_6_overview.md` and
      `docs/detailed/phase_6_detailed.md`.
+  9. Recovered the omitted `run_pipeline.py` after the final review, wired the
+     missing sampler/split/metadata/retry/latency fixes, and added CLI tests.
+     Documented in `docs/final_review_findings.md` section 8.

@@ -21,7 +21,7 @@ This document provides a high-level executive summary of the closed-loop adversa
    - Maintained VRAM strictly $< 1.8$ GB (well under the 4 GB limit) with periodic cache flushes (`torch.cuda.empty_cache()`).
 4. **Testing & QA Verification:**
    - Implemented `tests/test_pipeline.py`.
-   - **All 17 project tests passing at the time; 28 / 28 after Phase 6**, with Black and Flake8 clean.
+   - **All 17 project tests passing at the time; 36 / 36 after Phase 6**, with Black and Flake8 clean.
 
 ---
 
@@ -31,7 +31,7 @@ This document provides a high-level executive summary of the closed-loop adversa
 > **Phase 6 corrections.** The original run trained at ε = 0.05 but evaluated
 > at ε = 2.0, and its "holdout" evaluation used training samples. After the
 > fixes (shared persisted ε, disjoint stratified split, holdout selection,
-> `n_critic`), the budgeted WGAN reaches 1.90% on the scanning holdout and 0.00%
+> `n_critic`), the budgeted WGAN reaches 1.60% on the scanning holdout and 0.00%
 > on flood, with 0.10% on the all-regime holdout. After removing the post-hoc
 > clamp, the trained manifold generator reaches 99.9–100% at RMSE 0.078/0.037,
 > beating the naive clamp (0.114/0.109), while the untrained generator scores
@@ -47,7 +47,7 @@ Across 1,000 detected attack packets, the evaluation engine measured the followi
 | **Clean Baseline** | Unperturbed | $1.6798$ | $0.00\%$ | $11.85\%$ |
 | **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $2.9710$ | $0.00\%$ | $11.85\%$ |
 | **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $2.8681$ | $0.20\%$ | $12.02\%$ |
-| **WGAN-GP (Phase 4)** | $\epsilon = 2.00 \cdot \mathbf{s}$ | $2.6991$ | **$6.70\%$** | **$17.75\%$** |
+| **WGAN-GP (Phase 4, in-sample)** | $\epsilon = 2.00 \cdot \mathbf{s}$ | $2.6991$ | **$6.70\%$** | **$17.75\%$** |
 | **Multi-Step PGD** | 50 steps, $\epsilon = 2.00 \cdot \mathbf{s}$ | $0.8243$ | **$37.00\%$** | **$44.46\%$** |
 | **Manifold Traffic-Shaping** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.1085$** | **$100.00\%$** | **$100.00\%$** |
 

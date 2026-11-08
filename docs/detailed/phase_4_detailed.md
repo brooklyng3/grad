@@ -72,7 +72,7 @@ Where:
 - **Hardware Profile:** CUDA batch size = 128, VRAM $< 1.8$ GB.
 - **Runtime:** Completed 15 training epochs over 10,000 samples in **63.47 seconds**.
 - **Critic Convergence:** $\mathcal{L}_C$ converged from $-2.41$ to $-23.27$.
-- **Generator Evasion:** Conditional ASR on detected batches steadily climbed from $0.20\%$ to $6.70\%$ under $\epsilon = 2.0$.
+- **Generator Evasion (in-sample batch ASR):** Conditional ASR on the batches being trained climbed from $0.20\%$ to $6.70\%$ under $\epsilon = 2.0$ (15 epochs at the time; the CLI now defaults to 10).
 
 ### 4.2. Comparative Robustness Matrix (Original run: 1,000 **in-sample** detected attacks)
 
@@ -84,7 +84,7 @@ Where:
 | **Unperturbed Clean** | None | $1.6798$ | $0.00\%$ | $11.85\%$ | $0.000$ |
 | **FGSM ($\epsilon=0.05$)** | Single-Step | $2.9710$ | $0.00\%$ | $11.85\%$ | $0.050$ |
 | **FGSM ($\epsilon=0.25$)** | Single-Step | $2.8681$ | $0.20\%$ | $12.02\%$ | $0.250$ |
-| **WGAN-GP ($\epsilon=2.0$)**| Generative Hybrid | $2.6991$ | **$6.70\%$** | **$17.75\%$** | $1.998$ |
+| **WGAN-GP ($\epsilon=2.0$, in-sample)**| Generative Hybrid | $2.6991$ | **$6.70\%$** | **$17.75\%$** | $1.998$ |
 | **PGD ($\epsilon=2.0$)** | 50-Step Iterative | $0.8243$ | **$37.00\%$** | **$44.46\%$** | $2.000$ |
 | **Manifold Traffic-Shaping**| Rate-Paced Projection | **$0.1085$** | **$100.00\%$** | **$100.00\%$** | $8.945$ |
 
@@ -100,7 +100,7 @@ Where:
 - `test_evaluator_score_batches`: Validates GPU batching and non-negative RMSE outputs.
 - `test_evaluator_evasion_metrics`: Confirms distance norm calculations ($L_0, L_1, L_2, L_\infty$) and metric isolation.
 - `test_feedback_loop_initialization`: Validates parameter parsing and CUDA device binding.
-- **Full Suite Status:** 17 / 17 tests passing at the time; 28 / 28 after Phase 6.
+- **Full Suite Status:** 17 / 17 tests passing at the time; 36 / 36 after Phase 6.
 
 ---
 
@@ -113,10 +113,10 @@ selected by held-out ASR; training and evaluation both used ε = 2.0.
 |---|---:|
 | Original saved checkpoint, any ε including training window | 0.00% |
 | Corrected training, final disjoint holdout (spread over all attacks) | 0.10% |
-| Corrected generator, Phase A scanning holdout | **1.90%** |
+| Corrected generator, Phase A scanning holdout | **1.60%** |
 | Corrected generator, Phase B flood holdout | **0.00%** |
-| Corrected generator, scanning holdout, best-of-10 draws | **1.90%** (9.83 draws/pkt) |
-| Corrected generator, scanning holdout, 10-step refine | **3.90%** (aggregate L∞ 11.47) |
+| Corrected generator, scanning holdout, best-of-10 draws | **1.60%** (9.85 draws/pkt) |
+| Corrected generator, scanning holdout, 10-step refine | **3.80%** (aggregate L∞ 10.43) |
 
 The budgeted WGAN is therefore no longer non-functional, but it remains far
 weaker than the unbudgeted manifold attack (100%). After removing the post-hoc

@@ -19,7 +19,10 @@ def pipeline_setup():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = PyTorchKitNET.from_file(model_path, device=device)
     model.eval()
-    theta = 0.453419
+    with open("data/processed/threshold_config.yaml", "r") as f:
+        import yaml
+
+        theta = float(yaml.safe_load(f)["threshold"])
 
     evaluator = PipelineEvaluator(
         model=model, theta=theta, device=device, batch_size=64

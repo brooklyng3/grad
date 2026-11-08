@@ -125,7 +125,7 @@ We evaluated FGSM, standard multi-step PGD, and Manifold Traffic-Shaping PGD on 
 | **Manifold PGD** | 50 steps, $\alpha = 0.05 \cdot \mathbf{s}$, $[\mathbf{min}, \mathbf{max}]$ | **$0.0974$** | **$100.00\%$** |
 | **WGAN-GP (Prototype)** | 50 steps, $\lambda_{\text{evade}} = 30$, $\epsilon = 2.0$ | **$0.5355$** | **$53.12\%$** |
 
-*Historical note:* this prototype number is in-sample and was not reproduced by the saved Phase 4 checkpoint. After the Phase 6 fixes (shared ε, disjoint split, holdout selection, `n_critic`), the budgeted WGAN reaches 1.90% conditional ASR on the scanning holdout and 0.00% on flood. See `phase_6_detailed.md`.
+*Historical note:* this prototype number is in-sample and was not reproduced by the saved Phase 4 checkpoint. After the Phase 6 fixes (shared ε, disjoint split, holdout selection, `n_critic`), the budgeted WGAN reaches 1.60% conditional ASR on the scanning holdout and 0.00% on flood. See `phase_6_detailed.md`.
 
 ### 4.3. Analytical Insight
 Single-step FGSM successfully reduces the median RMSE from $1.64$ down to $0.98$. However, because Kitsune's ensemble decomposes features across 16 correlated micro-autoencoders, single-step perturbations that reduce error in one micro-AE can inadvertently increase error in another (reflected when $\epsilon$ gets too large at $5.0$). 
@@ -138,4 +138,4 @@ This confirms the necessity of **multi-step generative modeling (WGAN-GP)** in P
 - `test_deepfool_attack_step`: Confirms iterative minimal projection moves samples toward boundary.
 - `test_polymorphic_generator`: Confirms `mutate_raw` respects normalized $\epsilon$ bounds.
 - `test_wgan_discriminator_and_gradient_penalty`: Confirms Critic scores shape `[B, 1]` and computes scalar $\mathcal{L}_{GP} \ge 0$.
-- **Project Test Results:** 14 / 14 tests passing at the time; 28 / 28 after Phase 6.
+- **Project Test Results:** 14 / 14 tests passing at the time; 36 / 36 after Phase 6.

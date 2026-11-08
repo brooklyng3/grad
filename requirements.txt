@@ -1,0 +1,16 @@
+# Core runtime
+torch
+numpy
+scikit-learn
+pyyaml
+scapy
+dpkt
+
+# Feature extraction / build
+cython
+scipy
+
+# Quality gates
+pytest
+black
+flake8

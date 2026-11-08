@@ -1,109 +1,133 @@
 {
   "eval_summary": {
     "num_detected_evaluated": 1000,
-    "num_successfully_evaded": 1,
-    "conditional_asr_pct": 0.0999999999999999,
-    "overall_evasion_rate_pct": 11.935795061912854,
+    "num_successfully_evaded": 0,
+    "conditional_asr_pct": 0.0,
+    "overall_evasion_rate_pct": 11.847642704617472,
     "rmse_metrics": {
-      "initial_mean": 12.865192413330078,
-      "initial_median": 13.662102699279785,
-      "adversarial_mean": 11.67619514465332,
-      "adversarial_median": 12.568279266357422,
-      "adversarial_min": 0.30125781893730164,
-      "adversarial_max": 13.986907958984375
+      "initial_mean": 14.281322479248047,
+      "initial_median": 14.331259727478027,
+      "adversarial_mean": 13.103283882141113,
+      "adversarial_median": 13.137727737426758,
+      "adversarial_min": 9.565438270568848,
+      "adversarial_max": 14.086004257202148
     },
     "perturbation_distances": {
-      "mean_linf": 1.9998120069503784,
-      "max_linf": 1.9999573230743408,
-      "mean_l2": 9.365959167480469,
-      "max_l2": 9.895627975463867,
-      "mean_l1": 59.7910270690918,
-      "mean_l0_modified_features": 93.43299865722656
+      "mean_linf": 1.9997491836547852,
+      "max_linf": 1.9998540878295898,
+      "mean_l2": 9.616578102111816,
+      "max_l2": 9.864592552185059,
+      "mean_l1": 63.326438903808594,
+      "mean_l0_modified_features": 94.91000366210938
     }
   },
+  "test_summary": {
+    "num_detected_evaluated": 1000,
+    "num_successfully_evaded": 0,
+    "conditional_asr_pct": 0.0,
+    "overall_evasion_rate_pct": 11.847642704617472,
+    "rmse_metrics": {
+      "initial_mean": 14.281322479248047,
+      "initial_median": 14.331259727478027,
+      "adversarial_mean": 13.103283882141113,
+      "adversarial_median": 13.137727737426758,
+      "adversarial_min": 9.565438270568848,
+      "adversarial_max": 14.086004257202148
+    },
+    "perturbation_distances": {
+      "mean_linf": 1.9997491836547852,
+      "max_linf": 1.9998540878295898,
+      "mean_l2": 9.616578102111816,
+      "max_l2": 9.864592552185059,
+      "mean_l1": 63.326438903808594,
+      "mean_l0_modified_features": 94.91000366210938
+    }
+  },
+  "test_asr": 0.0,
   "history": [
     {
       "epoch": 1,
-      "loss_c": -8.312113177470671,
-      "loss_g": 321.30152540940503,
-      "batch_asr": 0.04006410256410256,
+      "loss_c": -8.255256881469336,
+      "loss_g": 292.2388180463742,
+      "batch_asr": 0.02003205128205128,
       "holdout_asr": 0.0,
-      "holdout_mean_rmse": 11.801259994506836
+      "holdout_mean_rmse": 10.511927604675293
     },
     {
       "epoch": 2,
-      "loss_c": -15.668828196403307,
-      "loss_g": 315.69959669846753,
-      "batch_asr": 0.09014423076923077,
+      "loss_c": -15.46626296165662,
+      "loss_g": 286.20831885704627,
+      "batch_asr": 0.07011217948717949,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.726197242736816
+      "holdout_mean_rmse": 10.432862281799316
     },
     {
       "epoch": 3,
-      "loss_c": -22.30965163891132,
-      "loss_g": 317.6577872251853,
-      "batch_asr": 0.14022435897435898,
+      "loss_c": -22.146339460519645,
+      "loss_g": 288.21175873585236,
+      "batch_asr": 0.11017628205128205,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.698209762573242
+      "holdout_mean_rmse": 10.40518569946289
     },
     {
       "epoch": 4,
-      "loss_c": -29.518945415203387,
-      "loss_g": 320.84605407714844,
-      "batch_asr": 0.2203525641025641,
+      "loss_c": -29.340037453480257,
+      "loss_g": 291.4404007349259,
+      "batch_asr": 0.19030448717948717,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.692256927490234
+      "holdout_mean_rmse": 10.393755912780762
     },
     {
       "epoch": 5,
-      "loss_c": -37.23236672817132,
-      "loss_g": 324.605467967498,
-      "batch_asr": 0.2403846153846154,
+      "loss_c": -36.5468615996532,
+      "loss_g": 294.8718410394131,
+      "batch_asr": 0.23036858974358976,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.68699836730957
+      "holdout_mean_rmse": 10.396449089050293
     },
     {
       "epoch": 6,
-      "loss_c": -44.35798790760529,
-      "loss_g": 328.2854970296224,
+      "loss_c": -44.65826392540565,
+      "loss_g": 298.88780799278845,
       "batch_asr": 0.2203525641025641,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.684962272644043
+      "holdout_mean_rmse": 10.392960548400879
     },
     {
       "epoch": 7,
-      "loss_c": -52.58644157800919,
-      "loss_g": 332.1276706793369,
-      "batch_asr": 0.2003205128205128,
+      "loss_c": -51.38713046342899,
+      "loss_g": 302.5157681978666,
+      "batch_asr": 0.2403846153846154,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.681795120239258
+      "holdout_mean_rmse": 10.384946823120117
     },
     {
       "epoch": 8,
-      "loss_c": -61.1831185169709,
-      "loss_g": 336.2638545892178,
-      "batch_asr": 0.26041666666666663,
+      "loss_c": -58.97561443035419,
+      "loss_g": 306.32609127729364,
+      "batch_asr": 0.2003205128205128,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.679664611816406
+      "holdout_mean_rmse": 10.382683753967285
     },
     {
       "epoch": 9,
-      "loss_c": -68.19156874632225,
-      "loss_g": 339.7386075533353,
-      "batch_asr": 0.26041666666666663,
+      "loss_c": -67.13848237257737,
+      "loss_g": 310.7815270057091,
+      "batch_asr": 0.2403846153846154,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.682052612304688
+      "holdout_mean_rmse": 10.382753372192383
     },
     {
       "epoch": 10,
-      "loss_c": -77.46629707140801,
-      "loss_g": 344.22024301382214,
-      "batch_asr": 0.26041666666666663,
+      "loss_c": -74.2886589832795,
+      "loss_g": 314.2445889986478,
+      "batch_asr": 0.250400641025641,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 11.676154136657715
+      "holdout_mean_rmse": 10.385734558105469
     }
   ],
-  "best_epoch": 10,
+  "best_epoch": 8,
+  "best_selection_asr": 0.1,
   "best_holdout_asr": 0.1,
   "eps": 2.0,
   "seed": 42,

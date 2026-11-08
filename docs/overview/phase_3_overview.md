@@ -25,7 +25,7 @@ This document provides a high-level executive summary of the offensive adversari
    - Differentiates **Conditional ASR** ($\text{ASR}_{\text{cond}}$) strictly computed over detected packets ($\text{RMSE}_{\text{orig}} > \theta$) from **Overall Evasion Rate** ($\text{ER}_{\text{total}}$), preventing the $76,123$ pre-evading packets from artificially inflating the attacker's success.
 5. **Quality & Test Automation (`tests/test_attacker.py`):**
    - Implemented unit tests for FGSM, DeepFool, PolymorphicGenerator, and WGANDiscriminator.
-   - Test suite at the time: **14 / 14 passing**; **28 / 28** after the Phase 6 remediation.
+   - Test suite at the time: **14 / 14 passing**; **36 / 36** after the Phase 6 remediation.
 
 ---
 

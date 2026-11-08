@@ -134,13 +134,13 @@ Evaluated across disjoint holdouts in both the Reconnaissance / Scanning and Vol
 | **Envelope Clamp Only** | Unbudgeted $[\min,\max]$ | 1.00 | **$0.1136$** | **$100.00\%$** | **$100.00\%$** | $12.9735$ | $2.4\text{ ms}$ |
 | **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | 1.00 | $5.3076$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $50.7\text{ ms}$ |
 | **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | 1.00 | $5.1910$ | $0.00\%$ | $11.85\%$ | $0.2500$ | $53.2\text{ ms}$ |
-| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1601$ | $2.30\%$ | $13.88\%$ | $1.9991$ | $2321.2\text{ ms}$ |
+| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1601$ | $2.30\%$ | $13.88\%$ | $1.9983$ | $2321.2\text{ ms}$ |
 | **DeepFool (bounded)** | 50 iters, $\epsilon \le 2.0 \cdot \mathbf{s}$ | 1.00 | $4.5108$ | $0.00\%$ | $11.85\%$ | $1.9683$ | $2387.1\text{ ms}$ |
 | **Multi-Step PGD (Manifold)** | Unbudgeted $[\min,\max]$, 50 steps | 1.00 | **$0.0909$** | **$100.00\%$** | **$100.00\%$** | $13.0325$ | $2170.6\text{ ms}$ |
-| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1836$ | $1.90\%$ | $13.52\%$ | $1.9990$ | $19.2\text{ ms}$ |
-| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 9.83 | $4.1807$ | $1.90\%$ | $13.52\%$ | $1.9991$ | $153.5\text{ ms}$ |
-| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 9.67 | $1.1778$ | $3.90\%$ | $15.29\%$ | $11.4744$ | $148.7\text{ ms}$ |
-| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0782$** | **$99.90\%$** | **$99.91\%$** | $13.8111$ | $7.6\text{ ms}$ |
+| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1925$ | $1.60\%$ | $13.52\%$ | $1.9981$ | $19.2\text{ ms}$ |
+| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 9.85 | $4.1883$ | $1.60\%$ | $13.52\%$ | $1.9983$ | $153.5\text{ ms}$ |
+| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 9.68 | $1.5275$ | $3.80\%$ | $15.29\%$ | $10.4344$ | $148.7\text{ ms}$ |
+| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0647$** | **$100.00\%$** | **$100.00\%$** | $13.9198$ | $7.6\text{ ms}$ |
 | **WGAN-GP (Manifold, untrained)** | Same forward, random weights | 1.00 | $5.6284$ | $0.00\%$ | $11.85\%$ | $6.1065$ | $3.0\text{ ms}$ |
 
 #### Phase B: Volumetric Flooding Phase (Baseline $\text{RMSE} = 13.4764$)
@@ -153,23 +153,23 @@ Evaluated across disjoint holdouts in both the Reconnaissance / Scanning and Vol
 | **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $12.2761$ | $0.00\%$ | $11.85\%$ | $2.0000$ | $2274.2\text{ ms}$ |
 | **DeepFool (bounded)** | 50 iters, $\epsilon \le 2.0 \cdot \mathbf{s}$ | 1.00 | $12.9098$ | $0.00\%$ | $11.85\%$ | $2.0000$ | $2135.0\text{ ms}$ |
 | **Multi-Step PGD (Manifold)** | Unbudgeted $[\min,\max]$, 50 steps | 1.00 | **$0.0896$** | **$100.00\%$** | **$100.00\%$** | $34.9754$ | $1668.1\text{ ms}$ |
-| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $12.2905$ | $0.00\%$ | $11.85\%$ | $1.9999$ | $1.9\text{ ms}$ |
-| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 10.00 | $12.2890$ | $0.00\%$ | $11.85\%$ | $1.9999$ | $149.7\text{ ms}$ |
-| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 10.00 | $5.3781$ | $0.00\%$ | $11.85\%$ | $19.8139$ | $195.4\text{ ms}$ |
-| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0367$** | **$100.00\%$** | **$100.00\%$** | $35.6243$ | $1.8\text{ ms}$ |
+| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $12.2900$ | $0.00\%$ | $11.85\%$ | $1.9998$ | $1.9\text{ ms}$ |
+| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 10.00 | $12.2890$ | $0.00\%$ | $11.85\%$ | $1.9998$ | $149.7\text{ ms}$ |
+| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 10.00 | $5.1945$ | $0.00\%$ | $11.85\%$ | $19.7303$ | $195.4\text{ ms}$ |
+| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0391$** | **$100.00\%$** | **$100.00\%$** | $35.3428$ | $1.8\text{ ms}$ |
 | **WGAN-GP (Manifold, untrained)** | Same forward, random weights | 1.00 | $15.0501$ | $0.00\%$ | $11.85\%$ | $15.8726$ | $5.0\text{ ms}$ |
 
 *Interpretation (post-fix):*
 The untrained manifold generator scores 0% (RMSE 5.63–15.05), while the trained
 generator reaches 99.9–100% at **lower** RMSE than the naive clamp (0.078 vs
 0.114 scanning; 0.037 vs 0.109 flood) and closer benign-neighbour distance
-(0.86/0.62 vs 0.91/0.87; benign baseline 0.14). The learned network is
+(0.67/0.62 vs 0.91/0.87; benign baseline 0.14). The learned network is
 therefore doing real work. The clamp remains faster and is a useful lower
 bound.
 
 Best-of-k leaves both ASR rows unchanged (conditional mode collapse). Ten
-feedback-refinement steps raise scanning to 3.90% and cut flood RMSE to 5.38,
-but total L∞ grows to 11.5/19.8, so it is an aggregate-budget result. The full
+feedback-refinement steps raise scanning to 3.80% and cut flood RMSE to 5.19,
+but total L∞ grows to 10.4/19.7, so it is an aggregate-budget result. The full
 table with kNN distances is in `reports/evaluation_table.md`.
 
 ---

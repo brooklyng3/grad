@@ -5,6 +5,13 @@ review in `docs/review_findings.md`. Every finding was addressed; the full code
 log, diffs, commands, and post-fix telemetry are in
 `docs/detailed/phase_6_detailed.md`.
 
+> **Final-review follow-up:** commit `cf27792` omitted `run_pipeline.py`. The
+> file was recovered from the session transcript, deduplicated, extended with
+> the remaining review fixes (sampler, split, metadata, retry rows, population
+> constants, latency, checkpoint naming), and verified. See
+> `docs/final_review_findings.md` section 8 and `phase_6_detailed.md` section
+> 16.
+
 ---
 
 ## 1. Why this phase exists
@@ -30,7 +37,7 @@ Phase 6 makes the benchmark honest and re-establishes reproducibility.
    - `WGAN-GP (Manifold, trained)` (99.9–100% ASR, RMSE **0.078/0.037**).
 
    The trained generator now beats the naive clamp on RMSE and on benign-kNN
-   distance (0.86/0.62 vs 0.91/0.87; benign baseline 0.14).
+   distance (0.67/0.62 vs 0.91/0.87; benign baseline 0.14).
 
 2. **Budget consistency.** `--eps` is a single CLI value used for both training
    and evaluation and persisted in `*.meta.json` beside each checkpoint. The
@@ -60,7 +67,7 @@ Phase 6 makes the benchmark honest and re-establishes reproducibility.
    strengthened from 22 to 28 and now assert evasion, best-of-k, and refinement
    invariants. A benign-kNN distance metric measures manifold proximity
    independently of the critic (benign baseline 0.138; clamp 0.91/0.87; trained
-   0.86/0.62).
+   0.67/0.62).
 
 8. **Domain constraints.** Packet-size mean channels are clamped to the MTU
    (≤1500 bytes) and jitter channels to IAT ≥ 0. TTL is documented as not
@@ -85,12 +92,12 @@ is stable. kNN is mean normalised L2 to the nearest benign validation packet
 |---|---:|---:|---:|---:|---:|
 | Envelope clamp only | 1.00 | 0.1136 | 100.00% | 100.00% | 12.97 | 0.9096 |
 | PGD manifold | 1.00 | 0.0909 | 100.00% | 100.00% | 13.03 | 1.2577 |
-| WGAN manifold, trained | 1.00 | 0.0782 | 99.90% | 99.91% | 13.81 | 0.8572 |
+| WGAN manifold, trained | 1.00 | 0.0647 | 100.00% | 100.00% | 13.81 | 0.6739 |
 | WGAN manifold, untrained | 1.00 | 5.6284 | 0.00% | 11.85% | 6.11 | 32.2566 |
 | PGD box, ε=2 | 1.00 | 4.1601 | 2.30% | 13.88% | 2.00 | 23.9633 |
-| WGAN box, 1 draw | 1.00 | 4.1836 | 1.90% | 13.52% | 2.00 | 24.1680 |
-| WGAN box, best-of-10 | 9.83 | 4.1807 | 1.90% | 13.52% | 2.00 | 24.1361 |
-| WGAN box, 10-step refine | 9.67 | 1.1778 | 3.90% | 15.29% | 11.47 | 12.1770 |
+| WGAN box, 1 draw | 1.00 | 4.1925 | 1.60% | 13.52% | 2.00 | 24.2740 |
+| WGAN box, best-of-10 | 9.85 | 4.1883 | 1.60% | 13.52% | 2.00 | 24.2401 |
+| WGAN box, 10-step refine | 9.68 | 1.5275 | 3.80% | 15.29% | 10.43 | 14.5611 |
 
 ### Phase B — Volumetric flood (1,000 detected)
 
@@ -98,12 +105,12 @@ is stable. kNN is mean normalised L2 to the nearest benign validation packet
 |---|---:|---:|---:|---:|---:|
 | Envelope clamp only | 1.00 | 0.1092 | 100.00% | 100.00% | 34.97 | 0.8739 |
 | PGD manifold | 1.00 | 0.0896 | 100.00% | 100.00% | 34.98 | 1.2060 |
-| WGAN manifold, trained | 1.00 | 0.0367 | 100.00% | 100.00% | 35.62 | 0.6228 |
+| WGAN manifold, trained | 1.00 | 0.0391 | 100.00% | 100.00% | 35.62 | 0.6161 |
 | WGAN manifold, untrained | 1.00 | 15.0501 | 0.00% | 11.85% | 15.87 | 83.0818 |
 | PGD box, ε=2 | 1.00 | 12.2761 | 0.00% | 11.85% | 2.00 | 67.3309 |
-| WGAN box, 1 draw | 1.00 | 12.2905 | 0.00% | 11.85% | 1.99 | 67.5523 |
+| WGAN box, 1 draw | 1.00 | 12.2900 | 0.00% | 11.85% | 1.99 | 67.5695 |
 | WGAN box, best-of-10 | 10.00 | 12.2890 | 0.00% | 11.85% | 2.00 | 67.5325 |
-| WGAN box, 10-step refine | 10.00 | 5.3781 | 0.00% | 11.85% | 19.81 | 36.4872 |
+| WGAN box, 10-step refine | 10.00 | 5.1945 | 0.00% | 11.85% | 19.81 | 35.2957 |
 
 Clean detection: θ = 0.455986, ROC-AUC 0.9418, TPR 88.13%, out-of-sample FPR
 0.0961%, precision 99.93%, F1 0.9366, benign kNN baseline 0.1383.
@@ -120,10 +127,10 @@ The honest thesis statement is now:
 > attacks at ε = 2.0 remain weak, and generator retries/refinement do not
 > overcome the budget.
 
-The budgeted WGAN improved from 0.00% (pre-fix checkpoint) to 1.90% on the
+The budgeted WGAN improved from 0.00% (pre-fix checkpoint) to 1.60% on the
 scanning holdout after fixing the epsilon and overfitting defects, but it still
 does not evade flood traffic at ε = 2.0. Best-of-k does not change ASR; ten
-feedback-refinement steps raise scanning to 3.90% and cut flood RMSE to 5.38,
+feedback-refinement steps raise scanning to 3.80% and cut flood RMSE to 5.19,
 but aggregate perturbation reaches 11.5–19.8 ε, so it is no longer an ε = 2
 result. The reviewer's predicted >80% was not reached.
 
