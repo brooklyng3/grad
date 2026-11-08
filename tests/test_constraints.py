@@ -85,6 +85,18 @@ def test_afterimage_signed_features_preserved():
         assert bounded[0, pcc_i] == -0.75
 
 
+def test_mtu_and_iat_bounds_enforced():
+    from src.utils.constraints import SIZE_MEAN_INDICES, IAT_STAT_INDICES
+
+    x = np.ones((1, 100)) * 100.0
+    x[0, SIZE_MEAN_INDICES] = 4000.0
+    x[0, IAT_STAT_INDICES] = -5.0
+
+    bounded = enforce_feature_bounds(x)
+    assert np.all(bounded[0, SIZE_MEAN_INDICES] == 1500.0)
+    assert np.all(bounded[0, IAT_STAT_INDICES] == 0.0)
+
+
 def test_apply_combined_constraints_torch():
     x_orig = torch.zeros((1, 100))
     x_adv = torch.ones((1, 100)) * 10.0

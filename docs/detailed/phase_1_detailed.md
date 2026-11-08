@@ -63,7 +63,7 @@ wgan:
   b2: 0.9
 
 perturbation:
-  eps_linf: 0.05
+  eps_linf: 2.0   # was 0.05 before Phase 6
   delta_l2: 1.0
   max_iterations: 100
   step_size: 0.01

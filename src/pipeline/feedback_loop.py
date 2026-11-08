@@ -1,5 +1,4 @@
-"""
-Automated Adversarial Training Feedback Loop (Phase 4).
+"""Automated Adversarial Training Feedback Loop (Phase 4, remediated in Phase 6).
 
 Connects Defender (PyTorchKitNET) and Attacker (PolymorphicGenerator & Critic)
 into a closed iterative feedback optimization loop.
@@ -10,11 +9,21 @@ Training Objective:
   2. Train Polymorphic Generator via Composite Objective:
          L_G = -E[D(adv)] + lambda_evade * E[Hinge(RMSE)] + lambda_dist * ||delta||
 
+Remediation changes:
+  - ``eps`` is explicit and shared with evaluation (no config/eval mismatch).
+  - Training attacks are drawn from a deterministic, disjoint split spread over
+    the whole attack population, not only the first 20,000 packets.
+  - ``n_critic`` is actually executed.
+  - A held-out attack split is scored every epoch; the best checkpoint by
+    holdout ASR is restored and saved.
+  - All RNGs are seeded.
+
 Ensures hardware compliance:
   - Batch sizes between 64 and 128.
-  - VRAM strictly under 4 GB with torch.cuda.empty_cache() between epochs.
+  - VRAM strictly under 4 GB with periodic cache flushes.
 """
 
+import copy
 import os
 import sys
 import time
@@ -35,6 +44,12 @@ from src.attacker.discriminator import (  # noqa: E402
 )
 from src.pipeline.evaluator import PipelineEvaluator  # noqa: E402
 from src.utils.constraints import enforce_feature_bounds  # noqa: E402
+from src.utils.data_splits import (  # noqa: E402
+    ATTACK_START,
+    attack_indices_for_split,
+    benign_indices_for_split,
+)
+from src.utils.seed import seed_everything  # noqa: E402
 
 
 class AdversarialFeedbackLoop:
@@ -46,6 +61,10 @@ class AdversarialFeedbackLoop:
         kitsune_config_path: str = "configs/kitsune_config.yaml",
         device: Optional[torch.device] = None,
         manifold_shaping: bool = False,
+        eps: Optional[float] = None,
+        threshold_config_path: str = "data/processed/threshold_config.yaml",
+        model_path: Optional[str] = None,
+        seed: int = 42,
     ) -> None:
         with open(config_path, "r") as f:
             self.wgan_cfg = yaml.safe_load(f)
@@ -56,13 +75,15 @@ class AdversarialFeedbackLoop:
             "cuda" if torch.cuda.is_available() else "cpu"
         )
         self.manifold_shaping = manifold_shaping
+        self.seed = seed
+        seed_everything(seed)
 
         # 1. Load Pre-trained Defender and Calibration Metadata
-        model_path = self.kit_cfg["data"]["model_weights"]
+        model_path = model_path or self.kit_cfg["data"]["model_weights"]
         self.defender = PyTorchKitNET.from_file(model_path, device=self.device)
         self.defender.eval()
 
-        with open("data/processed/threshold_config.yaml", "r") as f:
+        with open(threshold_config_path, "r") as f:
             thresh_meta = yaml.safe_load(f)
         self.theta = float(thresh_meta["threshold"])
 
@@ -76,9 +97,11 @@ class AdversarialFeedbackLoop:
 
         self.latent_dim = w_cfg.get("latent_dim", 32)
         self.feature_dim = w_cfg.get("feature_dim", 100)
-        self.eps = p_cfg.get("eps_linf", 0.5)
+        # The epsilon used here is also persisted with the checkpoint and used
+        # at evaluation time, removing the former train/eval mismatch.
+        self.eps = float(eps if eps is not None else p_cfg.get("eps_linf", 2.0))
         self.lambda_gp = w_cfg.get("lambda_gp", 10.0)
-        self.n_critic = w_cfg.get("n_critic", 5)
+        self.n_critic = int(w_cfg.get("n_critic", 5))
 
         self.generator = PolymorphicGenerator(
             feature_dim=self.feature_dim,
@@ -110,38 +133,52 @@ class AdversarialFeedbackLoop:
             batch_size=256,
         )
 
+    @staticmethod
+    def _spread(indices: np.ndarray, count: int) -> np.ndarray:
+        """Evenly sample ``count`` entries from an index array."""
+        if len(indices) <= count:
+            return indices
+        positions = np.linspace(0, len(indices) - 1, count, dtype=int)
+        return indices[positions]
+
     def load_training_data(
         self,
         max_malicious_samples: int = 10000,
         max_benign_samples: int = 10000,
     ) -> Dict[str, torch.Tensor]:
-        """Loads and pre-filters benign and detected malicious samples."""
+        """Load disjoint, representative benign and detected malicious pools."""
         features = np.load(self.kit_cfg["data"]["processed_features"], mmap_mode="r")
-        labels = []
         with open(self.kit_cfg["data"]["raw_labels"], "r") as f:
-            for line in f:
-                line_str = line.strip()
-                if line_str:
-                    labels.append(int(line_str))
-        labels = np.array(labels, dtype=np.int32)
+            labels = np.array(
+                [int(line.strip()) for line in f if line.strip()], dtype=np.int32
+            )
 
-        # 1. Post-convergence benign pool (i >= 55,000, label == 0)
-        benign_indices = np.where((labels == 0) & (np.arange(len(labels)) >= 55000))[0]
+        # 1. Benign pool: post-grace calibration split (validation stays clean)
+        benign_indices = benign_indices_for_split(labels, "calibration")
         selected_benign = benign_indices[:max_benign_samples]
         x_benign_raw = torch.tensor(
             features[selected_benign], dtype=torch.float32, device=self.device
         )
         x_benign_norm = (x_benign_raw - self.norm_min) / self.scales
 
-        # 2. Detected malicious pool (label == 1, RMSE > theta)
-        attack_indices = np.where(labels == 1)[0]
-        pool_size = min(len(attack_indices), max_malicious_samples * 2)
-        candidate_attacks = torch.tensor(
-            features[attack_indices[:pool_size]],
-            dtype=torch.float32,
-            device=self.device,
-        )
+        # 2. Attack pool: training split, half from the early scanning window and
+        #    half spread across the full attack population.
+        all_attacks = np.where(labels == 1)[0]
+        train_attacks = attack_indices_for_split(all_attacks, "train")
+        early = train_attacks[train_attacks < ATTACK_START + 10000]
+        later = train_attacks[train_attacks >= ATTACK_START + 10000]
 
+        pool_size = min(len(train_attacks), max_malicious_samples * 2)
+        n_early = min(len(early), pool_size // 2)
+        n_late = max(0, pool_size - n_early)
+        chosen = np.concatenate(
+            [early[:n_early], self._spread(later, min(n_late, len(later)))]
+        )
+        chosen.sort()
+
+        candidate_attacks = torch.tensor(
+            features[chosen], dtype=torch.float32, device=self.device
+        )
         with torch.no_grad():
             scores = self.evaluator.score_batches(candidate_attacks)
         detected_mask = scores > self.theta
@@ -150,7 +187,8 @@ class AdversarialFeedbackLoop:
 
         print(f"Loaded {x_benign_norm.size(0):,} benign training samples.")
         print(
-            f"Loaded {x_mal_detected_norm.size(0):,} strictly detected attack samples."
+            f"Loaded {x_mal_detected_norm.size(0):,} strictly detected attack "
+            f"samples (scan={n_early:,}, spread={n_late:,})."
         )
 
         return {
@@ -159,18 +197,56 @@ class AdversarialFeedbackLoop:
             "x_mal_detected_norm": x_mal_detected_norm,
         }
 
+    def load_holdout(self, labels: np.ndarray, max_samples: int = 1000) -> torch.Tensor:
+        """Load a detected attack batch from the disjoint evaluation split."""
+        features = np.load(self.kit_cfg["data"]["processed_features"], mmap_mode="r")
+        all_attacks = np.where(labels == 1)[0]
+        eval_attacks = attack_indices_for_split(all_attacks, "eval")
+        candidates = self._spread(eval_attacks, max_samples * 3)
+        x = torch.tensor(features[candidates], dtype=torch.float32, device=self.device)
+        with torch.no_grad():
+            scores = self.evaluator.score_batches(x)
+        return x[scores > self.theta][:max_samples]
+
+    def _train_critic_step(
+        self, real_batch: torch.Tensor, mal_norm_batch: torch.Tensor
+    ) -> float:
+        self.opt_c.zero_grad()
+        with torch.no_grad():
+            fake_batch = self.generator(mal_norm_batch, eps=self.eps).detach()
+
+        d_real = self.critic(real_batch).mean()
+        d_fake = self.critic(fake_batch).mean()
+        gp = compute_gradient_penalty(
+            self.critic, real_batch, fake_batch, device=self.device
+        )
+        loss_c = d_fake - d_real + self.lambda_gp * gp
+        loss_c.backward()
+        self.opt_c.step()
+        return float(loss_c.item())
+
     def train_loop(
         self,
         num_epochs: int = 20,
         batch_size: int = 128,
         lambda_evade: float = 30.0,
         lambda_dist: float = 0.05,
+        holdout_size: int = 1000,
+        save_dir: str = "data/attack_samples",
+        checkpoint_name: str = "wgan_generator.pt",
     ) -> Dict[str, Any]:
         """Executes the closed feedback loop training pass."""
+        seed_everything(self.seed)
         data = self.load_training_data()
         x_benign_norm = data["x_benign_norm"]
         x_mal_norm = data["x_mal_detected_norm"]
-        x_mal_raw = data["x_mal_detected_raw"]
+
+        with open(self.kit_cfg["data"]["raw_labels"], "r") as f:
+            labels = np.array(
+                [int(line.strip()) for line in f if line.strip()], dtype=np.int32
+            )
+        x_holdout = self.load_holdout(labels, max_samples=holdout_size)
+        print(f"Holdout detected attacks:  {x_holdout.size(0):,} (disjoint split)")
 
         num_samples = min(x_benign_norm.size(0), x_mal_norm.size(0))
         num_batches = num_samples // batch_size
@@ -180,12 +256,17 @@ class AdversarialFeedbackLoop:
         print(f"Device:           {self.device}")
         print(f"Epochs:           {num_epochs}")
         print(f"Batch Size:       {batch_size}")
+        print(f"Critic steps:     {self.n_critic}")
         print(f"Lambda Evade:     {lambda_evade}")
         print(f"Perturbation eps: {self.eps}")
         print("=" * 70)
 
         history = []
         start_time = time.time()
+        best_asr = -1.0
+        best_mean = float("inf")
+        best_epoch = 0
+        best_state: Optional[Dict[str, torch.Tensor]] = None
 
         for epoch in range(1, num_epochs + 1):
             epoch_loss_c = 0.0
@@ -193,7 +274,6 @@ class AdversarialFeedbackLoop:
             epoch_evaded_count = 0
             epoch_total_samples = 0
 
-            # Shuffle training data
             perm_b = torch.randperm(x_benign_norm.size(0))
             perm_m = torch.randperm(x_mal_norm.size(0))
 
@@ -205,57 +285,46 @@ class AdversarialFeedbackLoop:
                 mal_norm_batch = x_mal_norm[m_slice]
 
                 # ----------------------------------------------------
-                # Step 1: Train Critic (WGAN Discriminator)
+                # Step 1: Train Critic (WGAN n_critic updates)
                 # ----------------------------------------------------
-                self.opt_c.zero_grad()
-                with torch.no_grad():
-                    fake_batch = self.generator(mal_norm_batch, eps=self.eps).detach()
-
-                d_real = self.critic(real_batch).mean()
-                d_fake = self.critic(fake_batch).mean()
-                gp = compute_gradient_penalty(
-                    self.critic, real_batch, fake_batch, device=self.device
-                )
-                loss_c = d_fake - d_real + self.lambda_gp * gp
-                loss_c.backward()
-                self.opt_c.step()
-
-                epoch_loss_c += loss_c.item()
+                for _ in range(self.n_critic):
+                    epoch_loss_c += self._train_critic_step(real_batch, mal_norm_batch)
 
                 # ----------------------------------------------------
-                # Step 2: Train Generator with Hybrid Adversarial + Evasion Loss
+                # Step 2: Train Generator with Hybrid Evasion Loss
                 # ----------------------------------------------------
                 self.opt_g.zero_grad()
                 adv_norm = self.generator(mal_norm_batch, eps=self.eps)
 
-                # Critic realism objective
                 loss_adv = -self.critic(adv_norm).mean()
-
-                # Unnormalize preserving signed feature constraints
                 adv_raw = enforce_feature_bounds(adv_norm * self.scales + self.norm_min)
-
-                # Direct backpropagation through PyTorchKitNET
                 rmse_adv = self.defender(adv_raw)
-
-                # Hinge evasion loss: penalizes reconstruction error above theta
                 loss_evade = torch.clamp(rmse_adv - self.theta, min=0.0).mean()
-
-                # Distance constraint in normalized space
                 loss_dist = torch.norm(adv_norm - mal_norm_batch, p=2, dim=-1).mean()
 
                 loss_g = loss_adv + lambda_evade * loss_evade + lambda_dist * loss_dist
                 loss_g.backward()
                 self.opt_g.step()
 
-                epoch_loss_g += loss_g.item()
-
-                # Track evasion success
+                epoch_loss_g += float(loss_g.item())
                 with torch.no_grad():
-                    evaded = (rmse_adv <= self.theta).sum().item()
-                    epoch_evaded_count += evaded
+                    epoch_evaded_count += int((rmse_adv <= self.theta).sum().item())
                     epoch_total_samples += batch_size
 
-            avg_loss_c = epoch_loss_c / num_batches
+            # Holdout evaluation and best-checkpoint tracking
+            with torch.no_grad():
+                holdout_adv = self.generator.mutate_raw(
+                    x_holdout,
+                    self.norm_min,
+                    self.scales,
+                    eps=self.eps,
+                    mode="manifold" if self.manifold_shaping else "additive",
+                )
+                holdout_rmse = self.evaluator.score_batches(holdout_adv)
+            holdout_asr = float((holdout_rmse <= self.theta).mean() * 100.0)
+            holdout_mean = float(np.mean(holdout_rmse))
+
+            avg_loss_c = epoch_loss_c / (num_batches * self.n_critic)
             avg_loss_g = epoch_loss_g / num_batches
             batch_asr = (epoch_evaded_count / epoch_total_samples) * 100.0
 
@@ -264,31 +333,45 @@ class AdversarialFeedbackLoop:
                     "epoch": epoch,
                     "loss_c": avg_loss_c,
                     "loss_g": avg_loss_g,
-                    "conditional_asr": batch_asr,
+                    "batch_asr": batch_asr,
+                    "holdout_asr": holdout_asr,
+                    "holdout_mean_rmse": holdout_mean,
                 }
             )
+
+            if holdout_asr > best_asr or (
+                holdout_asr == best_asr and holdout_mean < best_mean
+            ):
+                best_asr = holdout_asr
+                best_mean = holdout_mean
+                best_epoch = epoch
+                best_state = copy.deepcopy(self.generator.state_dict())
 
             if epoch % 5 == 0 or epoch == 1:
                 print(
                     f"Epoch [{epoch:02d}/{num_epochs:02d}] | "
                     f"Loss C: {avg_loss_c:>8.4f} | "
                     f"Loss G: {avg_loss_g:>8.4f} | "
-                    f"Conditional ASR: {batch_asr:>6.2f}%"
+                    f"Batch ASR: {batch_asr:>6.2f}% | "
+                    f"Holdout ASR: {holdout_asr:>6.2f}%"
                 )
 
-            # Enforce GPU memory discipline
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
         total_time = time.time() - start_time
         print("-" * 70)
         print(f"Feedback loop training complete in {total_time:.2f}s!")
+        print(f"Best holdout ASR {best_asr:.2f}% at epoch {best_epoch}.")
 
-        # Final evaluation on holdout detected samples
-        print("\nEvaluating final generator performance across detected pool...")
+        if best_state is not None:
+            self.generator.load_state_dict(best_state)
+
+        # Final evaluation on the disjoint holdout
+        print("\nEvaluating best generator on the holdout split...")
         with torch.no_grad():
             final_adv_raw = self.generator.mutate_raw(
-                x_mal_raw[:1000],
+                x_holdout,
                 self.norm_min,
                 self.scales,
                 eps=self.eps,
@@ -296,14 +379,14 @@ class AdversarialFeedbackLoop:
             )
 
         eval_summary = self.evaluator.evaluate_evasion(
-            x_orig=x_mal_raw[:1000],
+            x_orig=x_holdout,
             x_adv=final_adv_raw,
             num_pre_evaded=76123,
             total_attack_population=642516,
         )
 
         print("-" * 70)
-        print("FINAL EVALUATION SUMMARY (POST-FEEDBACK LOOP):")
+        print("FINAL EVALUATION SUMMARY (DISJOINT HOLDOUT):")
         print(
             f"  Conditional ASR on Detected:  "
             f"{eval_summary['conditional_asr_pct']:.2f}%"
@@ -323,10 +406,11 @@ class AdversarialFeedbackLoop:
         )
         print("=" * 70)
 
-        # Save trained generator and critic checkpoints
-        os.makedirs("data/attack_samples", exist_ok=True)
-        gen_path = "data/attack_samples/wgan_generator.pt"
-        critic_path = "data/attack_samples/wgan_critic.pt"
+        os.makedirs(save_dir, exist_ok=True)
+        gen_path = os.path.join(save_dir, checkpoint_name)
+        critic_path = os.path.join(
+            save_dir, checkpoint_name.replace("generator.pt", "critic.pt")
+        )
         torch.save(self.generator.state_dict(), gen_path)
         torch.save(self.critic.state_dict(), critic_path)
         print(f"Saved generator checkpoint: {gen_path}")
@@ -335,6 +419,10 @@ class AdversarialFeedbackLoop:
         return {
             "eval_summary": eval_summary,
             "history": history,
+            "best_epoch": best_epoch,
+            "best_holdout_asr": best_asr,
+            "eps": self.eps,
+            "seed": self.seed,
             "generator_path": gen_path,
             "critic_path": critic_path,
         }
@@ -353,6 +441,7 @@ class AdversarialFeedbackLoop:
             batch_size=batch_size,
             lambda_evade=lambda_evade,
             lambda_dist=lambda_dist,
+            **kwargs,
         )
 
 

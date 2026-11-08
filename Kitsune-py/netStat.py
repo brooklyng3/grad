@@ -4,8 +4,13 @@ import os
 import subprocess
 import pyximport
 pyximport.install()
-import AfterImage as af
-#import AfterImage_NDSS as af
+# The pure-Python extractor is the default because the committed feature
+# matrix and trained model were produced with it.  Set KITSUNE_USE_CYTHON=1 to
+# use the compiled AfterImage_extrapolate extension for faster extraction.
+if os.environ.get("KITSUNE_USE_CYTHON") == "1":
+    import AfterImage_extrapolate as af
+else:
+    import AfterImage as af
 
 #
 # MIT License

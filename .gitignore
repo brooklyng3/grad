@@ -5,6 +5,7 @@ data/
 *.pcapng
 *.tsv
 *.csv
+!reports/*.csv
 mirai.pcap
 mirai.pcap.tsv
 mirai_labels.csv
@@ -36,3 +37,4 @@ env/
 
 # Screenshots and prompt images
 img/
+*:Zone.Identifier

@@ -50,8 +50,7 @@ def test_evaluator_subsample_extrapolation(pipeline_setup):
     evaluator = pipeline_setup["evaluator"]
     x = pipeline_setup["x_test"]  # 32 samples
 
-    # Test case 1: 100% conditional evasion on subsample yields 100% overall evasion
-    # Mocking low RMSE using zeros tensor
+    # Test case 1: 100% conditional evasion on subsample yields 100% overall
     x_zero = torch.zeros_like(x)
     metrics_100 = evaluator.evaluate_evasion(
         x_orig=x,
@@ -59,24 +58,43 @@ def test_evaluator_subsample_extrapolation(pipeline_setup):
         num_pre_evaded=76123,
         total_attack_population=642516,
     )
-    if metrics_100["conditional_asr_pct"] == 100.0:
-        assert pytest.approx(metrics_100["overall_evasion_rate_pct"], 1e-4) == 100.0
+    assert metrics_100["conditional_asr_pct"] == pytest.approx(100.0)
+    assert metrics_100["overall_evasion_rate_pct"] == pytest.approx(100.0)
 
-    # Test case 2: 0% conditional evasion on subsample should yield baseline pre-evasion
-    # Mocking high RMSE by multiplying x by 100
-    x_high = x * 100.0 + 100.0
+    # Test case 2: 0% conditional evasion should reduce to baseline pre-evasion
+    x_high = x + 1e6
     metrics_0 = evaluator.evaluate_evasion(
         x_orig=x,
         x_adv=x_high,
         num_pre_evaded=76123,
         total_attack_population=642516,
     )
-    if metrics_0["conditional_asr_pct"] == 0.0:
-        expected_baseline = (76123 / 642516) * 100.0
-        assert (
-            pytest.approx(metrics_0["overall_evasion_rate_pct"], 1e-4)
-            == expected_baseline
-        )
+    assert metrics_0["conditional_asr_pct"] == pytest.approx(0.0)
+    assert metrics_0["overall_evasion_rate_pct"] == pytest.approx(
+        (76123 / 642516) * 100.0
+    )
+
+
+def test_benign_knn_distance(pipeline_setup):
+    evaluator = pipeline_setup["evaluator"]
+    x = pipeline_setup["x_test"]
+    evaluator.set_benign_reference(x[:16])
+    d_self = evaluator.benign_knn_distance(x[:16], chunk_size=8)
+    d_far = evaluator.benign_knn_distance(x[:16] * 10.0, chunk_size=8)
+    assert np.isfinite(d_self)
+    assert d_self < d_far
+
+
+def test_benign_splits_are_disjoint():
+    import numpy as np
+    from src.utils.data_splits import benign_indices_for_split
+
+    labels = np.zeros(56000, dtype=np.int32)
+    cal = benign_indices_for_split(labels, "calibration")
+    val = benign_indices_for_split(labels, "validation")
+    assert set(cal).isdisjoint(set(val))
+    assert len(cal) + len(val) == 1000
+    assert cal.min() >= 55000
 
 
 def test_feedback_loop_initialization():

@@ -1,6 +1,6 @@
 # Implementation Plan: Kitsune NIDS vs. Polymorphic WGAN Pipeline
 
-This plan outlines the architecture, milestone sequence, and technical deliverables for the Kitsune NIDS vs. Polymorphic WGAN pipeline, updated with operational insights from [Note to myself.pdf](file:///home/brooklyng3/projects/grad/Note%20to%20myself.pdf) and strict adherence to [AGENTS.md](file:///home/brooklyng3/projects/grad/AGENTS.md), [.agentignore](file:///home/brooklyng3/projects/grad/.agentignore), and [.gitignore](file:///home/brooklyng3/projects/grad/.gitignore).
+This plan outlines the architecture, milestone sequence, and technical deliverables for the Kitsune NIDS vs. Polymorphic WGAN pipeline, updated to address the distinction between raw packet dissections and statistical feature matrices, and strictly adhering to [AGENTS.md](file:///home/brooklyng3/projects/grad/AGENTS.md), [.agentignore](file:///home/brooklyng3/projects/grad/.agentignore), and [.gitignore](file:///home/brooklyng3/projects/grad/.gitignore).
 
 ---
 
@@ -8,126 +8,164 @@ This plan outlines the architecture, milestone sequence, and technical deliverab
 
 ```mermaid
 flowchart TD
-    subgraph Ingestion & Preprocessing
-        A1[mirai.pcap / PCAP Source] -->|Fast Streaming via tshark / dpkt| A2[Feature Extractor: AfterImage]
-        A2 -->|Streamed TSV/CSV| A3[100-dim Damped Window Statistics]
+    subgraph Raw Traffic Ingestion: Done
+        D1[mirai.pcap: 764,137 pkts] -->|tshark extraction| D2[data/raw/mirai.pcap.tsv: 19 raw packet header fields]
+        D3[UCI Ground Truth] --> D4[data/raw/mirai_labels.csv: 764,137 labels]
     end
 
-    subgraph Defender: Kitsune / KitNET
-        A3 --> B1[CorClust: FMgrace = 5000 packets]
-        B1 --> B2[Ensemble Layer: maxAE = 10, ADgrace = 50000 packets]
-        B2 --> B3[Output Layer Master AE: Train via process, Score via execute]
-        B3 --> B4[Threshold Calibration: 99.9th percentile benign RMSE]
+    subgraph Feature Processing & Model Training Pass: Phase 1.5
+        D2 -->|AfterImage Incremental Extractor FE.get_next_vector| P1[100D Statistical Feature Vectors]
+        P1 -->|Stream into disk| P2[data/processed/mirai_features.npy: memmapped 764,137 x 100 float32]
+        P1 -->|Simultaneous Training| K1[KitNET: FMgrace=5000, ADgrace=50000]
+        K1 -->|Serialize AnomDetector only| K2[data/processed/kitsune_mirai_model.pkl]
     end
 
-    subgraph Attacker: Polymorphic Generator
-        C1[Malicious Feature Vectors / Samples] --> C2[Generator: WGAN-GP / FGSM / DeepFool]
-        C2 --> C3[Domain Constraints Projection: Bounds, MTU, Protocol Feasibility]
+    subgraph Defender Evaluation & Thresholding
+        P2 --> K3[Fast Tensor Slicing]
+        K3 -->|execute with torch.no_grad| K4[Benign vs Malicious RMSE Distributions]
+        D4 --> K4
+        K4 --> K5[Anomaly Threshold θ: 99.9th percentile benign RMSE]
     end
 
-    subgraph Evaluation & Feedback Loop
-        C3 -->|Perturbed Vectors| B3
-        B4 -->|RMSE Score vs Threshold θ| D1{RMSE <= θ?}
-        D1 -->|No: Detected| C2
-        D1 -->|Yes: Evasion Successful| D2[Log Evasion Rate & Perturbation Metrics L_inf / L2]
+    subgraph Attacker Engine & Feedback Loop
+        P2 -->|Select Malicious Samples label=1| A1[Malicious Feature Batches]
+        A1 --> A2[Generator: WGAN-GP / FGSM / DeepFool]
+        A2 --> A3[Constraints Projection: src/utils/constraints.py]
+        A3 -->|Adversarial Feature Vectors| K1
+        K1 -->|RMSE Scoring vs θ| A4{RMSE <= θ?}
+        A4 -->|No: Detected| A2
+        A4 -->|Yes: Evasion Successful| A5[Log Evasion Metrics & Perturbation Budget]
     end
 ```
 
 ---
 
-## 2. Key Operational Lessons & Pitfalls Integrated
+## 2. Key Architectural Invariants & Pitfalls Addressed
 
-Based on prior experiments ([Note to myself.pdf](file:///home/brooklyng3/projects/grad/Note%20to%20myself.pdf)):
-1. **Packet Parser Performance:** Scapy on full multi-hundred-thousand packet traces is excessively slow. Streaming via `tshark` or `dpkt` is essential. If system `tshark` is used, AppArmor permissions must be managed.
-2. **Modern NumPy Compatibility:** Ensure legacy `numpy.Inf` is replaced with `numpy.inf` throughout codebase.
-3. **Model Persistence Nuance:** Never attempt to pickle the complete `Kitsune` pipeline wrapper (which holds unpicklable parser and open file handles). Persist only the trained neural network (`K.AnomDetector` / `KitNET`).
-4. **Inference vs. Training Execution:**
-   - Training/Online update uses `process(x)`.
-   - Pure inference / evaluation must use `execute(x)` to score without modifying ensemble weights.
-5. **Threshold Calibration Standard:**
-   - The anomaly alert threshold $\theta$ is calibrated at the **99.9th percentile of benign traffic RMSE** (`threshold = np.percentile(benign_rmses, 99.9)`).
-6. **Data & File Discipline:**
-   - `mirai.pcap`, `mirai.pcap.tsv`, `mirai_labels.csv`, and `kitsune_mirai_model.pkl` fall under [.agentignore](file:///home/brooklyng3/projects/grad/.agentignore). Always stream iteratively line-by-line using CSV/TSV readers; never read entire files into memory or prompt context.
+1. **Raw Dissection TSV vs. 100D Feature Vector (Fact Checker Concern #2):**
+   - `data/raw/mirai.pcap.tsv` contains raw Wireshark text fields (`eth.src`, `ip.src`, MAC addresses, hex/strings). Attempting `np.array(tsv_row, dtype=float)` on this file causes a `ValueError: could not convert string to float`.
+   - The 100 continuous numeric features are output by **AfterImage** (`FE.get_next_vector()`).
+   - In Phase 1.5, we will stream `data/raw/mirai.pcap.tsv` through `AfterImage` once, saving the resulting 100D numeric vectors into memory-mapped `data/processed/mirai_features.npy` (~305 MB as float32).
+   - This allows threshold evaluation, baseline testing, and WGAN-GP mutation batches to load tensors in milliseconds without re-running AfterImage packet-by-packet.
+2. **Model Persistence Isolation (Fact Checker Concern #3):**
+   - Never serialize the outer `Kitsune` instance `K` (which contains file descriptors and `FeatureExtractor` parser states).
+   - Only serialize `K.AnomDetector` (the `KitNET` ensemble network) into `data/processed/kitsune_mirai_model.pkl`.
+3. **Execution Separation:**
+   - Training: `kitnet.process(x)` updates feature mapping and autoencoder weights during grace periods.
+   - Inference/Evaluation: `kitnet.execute(x)` scores reconstruction RMSE in pure forward mode without mutating weights.
+4. **Calibrated Threshold:**
+   - Threshold $\theta$ is set at the 99.9th percentile of benign traffic RMSE:
+     $$\theta = \text{percentile}(\text{benign\_rmses}, 99.9)$$
 
 ---
 
 ## 3. Phased Milestone Roadmap
 
-### Phase 1: Environment & Project Scaffolding
-- **Goal:** Set up directory layout, configuration files, and baseline constraints.
+### Phase 0: Legacy Migration & System Tools (Completed)
+- Ported `Kitsune-py` to Python 3.12 (replaced deprecated `np.Inf` / `numpy.Inf`).
+- Compiled native Cython extension `AfterImage_extrapolate`.
+- Installed system `tshark` and verified integration with `FeatureExtractor.py`.
+- Documented in [docs/detailed/phase_0_detailed.md](file:///home/brooklyng3/projects/grad/docs/detailed/phase_0_detailed.md).
+
+### Phase 0.5: Data Ingestion & Ground Truth Setup (Completed)
+- Unpacked `data/raw/mirai.pcap` (764,137 packets).
+- Downloaded `data/raw/mirai_labels.csv` (764,137 matching binary labels).
+- Dissected packets into `data/raw/mirai.pcap.tsv` (19 raw fields) via `tshark`.
+- Documented in [docs/detailed/phase_0_5_detailed.md](file:///home/brooklyng3/projects/grad/docs/detailed/phase_0_5_detailed.md).
+
+---
+
+### Phase 1: Project Scaffolding & Domain Constraints (Completed)
+- **Goal:** Set up modular project structure, configuration files, and domain invariant constraints.
 - **Tasks:**
-  1. Create directories matching [AGENTS.md](file:///home/brooklyng3/projects/grad/AGENTS.md):
+  1. Build repository directory structure matching [AGENTS.md](file:///home/brooklyng3/projects/grad/AGENTS.md):
      - `configs/` (`kitsune_config.yaml`, `wgan_config.yaml`)
-     - `data/` (`raw/`, `processed/`, `attack_samples/`)
      - `src/` (`defender/`, `attacker/`, `pipeline/`, `utils/`)
      - `tests/`
-  2. Define `requirements.txt` (PyTorch, Cython, NumPy, Scikit-learn, Scapy, DPKT, PyYAML, Flake8, Black, Pytest).
-  3. Implement `src/utils/constraints.py`:
+  2. Implement `src/utils/constraints.py`:
      - MTU ($\le 1500$), non-negative IATs, TTL in $[1, 255]$.
-     - Immutable header preservation and perturbation clamping ($L_\infty \le \epsilon$, $L_2 \le \delta$).
-  4. Write initial sanity unit tests in `tests/`.
+     - Feature range clipping and perturbation bounds ($L_\infty \le \epsilon$, $L_2 \le \delta$).
+  3. Implement `tests/test_constraints.py` and run `pytest`.
 
 ---
 
-### Phase 2: Feature Pipeline & Defender (Kitsune / KitNET)
-- **Goal:** Implement and calibrate the unsupervised online NIDS using PyTorch / modern Python.
+### Phase 1.5: Feature Extraction & KitNET Training Run (Completed)
+- **Goal:** Stream `data/raw/mirai.pcap.tsv` through AfterImage, train KitNET, and persist both `mirai_features.npy` and `kitsune_mirai_model.pkl`.
 - **Tasks:**
-  1. **Feature Extraction (`src/defender/afterimage.py`):**
-     - Streaming 1D and 2D incremental damped window statistics (100 feature dimensions).
-     - Streaming reader supporting pre-extracted TSV/CSV (`mirai.pcap.tsv`) and live packet streaming (`dpkt` / `tshark`).
-  2. **KitNET Architecture (`src/defender/kitnet.py`):**
-     - **CorClust:** Correlation clustering over initial `FMgrace = 5000` packets to group features for micro-autoencoders (`maxAE = 10`).
-     - **Ensemble Layer:** Parallel autoencoders trained online over `ADgrace = 50000` packets.
-     - **Output Layer:** Master autoencoder scoring final RMSE.
-     - **API Separation:** Explicit `train_step(x)` (or `process(x)`) vs pure `predict(x)` (or `execute(x)`) without weight mutation.
-     - **Persistence:** Standalone serialization/deserialization for KitNET model weights (`kitsune_mirai_model.pkl`), independent of packet parsers.
-  3. **Threshold Calibration (`src/defender/eval_threshold.py`):**
-     - Stream `mirai.pcap.tsv` and `mirai_labels.csv`.
-     - Calibrate $\theta$ at benign 99.9th percentile:
-       $$\theta = \text{percentile}(\text{benign\_rmses}, 99.9)$$
-     - Compute baseline detection rate ($\text{RMSE} > \theta$) and evasion rate ($\text{RMSE} \le \theta$).
-  4. **Unit Tests:**
-     - `tests/test_kitnet.py` verifying weight isolation during inference, forward pass shapes, and persistence.
+  1. Write streaming extractor script `scripts/extract_and_train.py`:
+     - Streams `data/raw/mirai.pcap.tsv` line-by-line via `FE.get_next_vector()`.
+     - Writes extracted 100D float vectors directly into memory-mapped array `data/processed/mirai_features.npy` (shape: `[764137, 100]`, `float32`).
+     - Simultaneously trains `KitNET(100, maxAE=10, FMgrace=5000, ADgrace=50000)`.
+     - Saves only `K.AnomDetector` to `data/processed/kitsune_mirai_model.pkl`.
+  2. *Resource Notice:* Pause and notify user before running this feature extraction pass.
 
 ---
 
-### Phase 3: Attacker Engine (WGAN-GP & Gradient Baselines)
-- **Goal:** Build the polymorphic mutation generator to perturb attack traffic while preserving feasibility.
+### Phase 2: Defender Evaluation & Threshold Calibration (Completed)
+- **Goal:** Calibrate alert threshold $\theta$ using memory-mapped features and ground truth labels.
 - **Tasks:**
-  1. **Perturbation Baselines (`src/attacker/perturbations.py`):**
-     - Fast Gradient Sign Method (FGSM) adapted for autoencoder reconstruction loss under $L_\infty$ bound.
-     - DeepFool iterative perturbation tailored for continuous network feature vectors.
-  2. **WGAN-GP Architecture (`src/attacker/generator.py`, `src/attacker/discriminator.py`):**
-     - **Generator:** MLP conditioning on noise $z$ and malicious feature vector $x_{\text{mal}}$, generating perturbed candidate $x_{\text{adv}}$.
-     - **Critic (Discriminator):** Evaluates realism of perturbed traffic against benign feature distribution.
-     - **Gradient Penalty:** Enforces 1-Lipschitz continuity ($\lambda_{GP} = 10$).
-     - Differentiable projection onto feasible feature bounds defined in `src/utils/constraints.py`.
-  3. **Unit Tests:**
-     - `tests/test_attacker.py` validating generator bounds, critic loss, and perturbation constraints.
+  1. Implement `src/defender/eval_threshold.py`:
+     - Fast vector evaluation using `mirai_features.npy` and `mirai_labels.csv`.
+     - Score benign packets in `execute` mode; set $\theta = \text{percentile}(\text{benign\_rmses}, 99.9)$.
+     - Measure baseline Detection Rate and Evasion Rate on raw attack packets.
+  2. Implement `tests/test_kitnet.py`.
 
 ---
 
-### Phase 4: Automated Evaluation & Feedback Loop
-- **Goal:** Connect defender and attacker into an automated closed-loop evaluation system.
+### Phase 3: Attacker Engine (WGAN-GP & Gradient Perturbations) (Completed)
+- **Goal:** Implement polymorphic mutation generator for feature vectors under domain constraints.
 - **Tasks:**
-  1. **Evaluation Engine (`src/pipeline/evaluator.py`):**
-     - Stream clean benign vs. raw attack vs. mutated attack data through Kitsune in pure inference mode (`execute(x)` with `torch.no_grad()`).
-     - Track Detection Rate, False Positive Rate (FPR), and Evasion Rate (ASR).
-  2. **Feedback Loop (`src/pipeline/feedback_loop.py`):**
-     - Iterative loop: Malicious samples $\rightarrow$ Attacker mutates $\rightarrow$ Kitsune scores RMSE $\rightarrow$ feedback updates mutation until $\text{RMSE} \le \theta$ or perturbation budget is exhausted.
-  3. **Memory & Resource Discipline:**
-     - GPU VRAM constrained $< 4$ GB; batch sizes 64–256.
-     - Periodic `torch.cuda.empty_cache()` between evaluation cycles.
+  1. Implement `src/attacker/perturbations.py`:
+     - FGSM baseline adapted for autoencoder reconstruction loss.
+     - DeepFool baseline.
+  2. Implement `src/attacker/generator.py` and `src/attacker/discriminator.py`:
+     - WGAN-GP generator conditioning on malicious feature vectors.
+     - Critic evaluating realism vs benign distribution with Gradient Penalty ($\lambda_{GP}=10$).
+     - Differentiable projection layers enforcing domain constraints.
+  3. Implement `tests/test_attacker.py`.
 
 ---
 
-### Phase 5: Metrics, Reporting & CLI
-- **Goal:** Benchmark robustness and output detailed evasion analysis.
-- **Tasks:**
-  1. **Metrics Engine (`src/utils/metrics.py`):**
-     - Adversarial Success Rate (ASR) curve vs. $\epsilon$ ($L_\infty$) and $\delta$ ($L_2$).
-     - Feature distortion distances ($L_0, L_1, L_2, L_\infty$).
-     - Inference and mutation throughput (samples/sec).
-  2. **Pipeline Runner (`run_pipeline.py`):**
-     - Unified CLI allowing configuration via `configs/kitsune_config.yaml` and `configs/wgan_config.yaml`.
-     - Output JSON summaries and evaluation plots.
+### Phase 4: Automated Evaluation & Feedback Loop (Completed; remediated in Phase 6)
+- **Goal:** Closed-loop iteration mutating traffic until $\text{RMSE} \le \theta$.
+- **Tasks Completed:**
+  1. Implemented `src/pipeline/evaluator.py`: Decoupled $\text{ASR}_{\text{cond}}$ vs $\text{ER}_{\text{total}}$, norm distance tracking ($L_0, L_1, L_2, L_\infty$).
+  2. Implemented `src/pipeline/feedback_loop.py`: Composite hinge evasion loss backpropagating through Kitsune autoencoders.
+  3. Implemented `tests/test_pipeline.py`.
+  4. Documented in `docs/overview/phase_4_overview.md` and `docs/detailed/phase_4_detailed.md`.
+- **Phase 6 corrections:** disjoint stratified training split, shared train/eval epsilon persisted in checkpoint metadata, `n_critic` execution, holdout model selection, and a best-of-k retry attack.
+
+---
+
+### Phase 5: Metrics, Reporting & End-to-End CLI Pipeline (Completed)
+- **Goal:** Metrics logging, reporting suite, and unified CLI runner.
+- **Tasks Completed:**
+  1. Implemented `src/utils/metrics.py`: Detection metrics (ROC-AUC, Precision, Recall/TPR, FPR, F1, Accuracy), distortion trade-off curves, markdown tables, JSON/CSV exporters.
+  2. Implemented root CLI runner `run_pipeline.py`: Supports 5 execution modes (`evaluate_clean`, `fgsm_sweep`, `pgd_attack`, `train_wgan`, `evaluate_all`).
+  3. Implemented `tests/test_metrics.py` (all 22 project tests passing).
+  4. Generated comprehensive benchmark reports in `reports/`.
+  5. Documented in `docs/overview/phase_5_overview.md` and `docs/detailed/phase_5_detailed.md`.
+
+---
+
+### Phase 6: Review Remediation & Honest Attribution (Completed)
+- **Goal:** Address every finding in the independent review
+  (`docs/review_findings.md`) without weakening the benchmark.
+- **Tasks Completed:**
+  1. Removed the post-hoc manifold clamp so the generator learns the target
+     step, and added clamp-only/untrained controls plus a benign-kNN realism
+     metric. The trained generator now beats the clamp while the untrained one
+     scores 0%.
+  2. Unified the training/evaluation epsilon (`--eps`), persisted it in
+     checkpoint metadata, and set the config default to 2.0.
+  3. Added disjoint modulo splits for attack train/eval and parity splits for
+     benign calibration/validation.
+  4. Executed `n_critic`, added held-out epoch scoring and best-checkpoint
+     selection, and made training data cover both scanning and flood.
+  5. Added seeded best-of-k and feedback-refinement attacks plus an
+     out-of-sample FPR measurement.
+  6. Enforced MTU/IAT bounds; documented the TTL limitation.
+  7. Wired the Cython extractor as an opt-in, benchmarked DeepFool, regenerated
+     all reports, added a README, and repaired documentation links.
+  8. Documented in `docs/overview/phase_6_overview.md` and
+     `docs/detailed/phase_6_detailed.md`.

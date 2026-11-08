@@ -42,6 +42,7 @@ class PipelineEvaluator:
         self.norm_min, self.norm_max, self.scales = model.get_global_feature_bounds(
             as_torch=True
         )
+        self.benign_ref_norm: Optional[torch.Tensor] = None
 
     @torch.no_grad()
     def score_batches(self, x: torch.Tensor) -> np.ndarray:
@@ -56,6 +57,35 @@ class PipelineEvaluator:
             scores.append(batch_rmse.cpu().numpy())
 
         return np.concatenate(scores)
+
+    def set_benign_reference(self, x_benign_raw: torch.Tensor) -> None:
+        """Stores a benign reference set for manifold-proximity scoring."""
+        self.benign_ref_norm = (
+            (x_benign_raw.to(self.device) - self.norm_min) / self.scales
+        ).detach()
+
+    @torch.no_grad()
+    def benign_knn_distance(self, x_raw: torch.Tensor, chunk_size: int = 64) -> float:
+        """Mean L2 distance from each sample to its nearest benign reference.
+
+        Reported in normalised feature space as an independent (non-critic)
+        proxy for whether a mutated vector lies near the benign manifold.
+
+        Args:
+            x_raw: Candidate features [N, 100].
+            chunk_size: Query chunk size.
+
+        Returns:
+            Mean nearest-neighbour distance, or NaN if no reference is set.
+        """
+        if self.benign_ref_norm is None:
+            return float("nan")
+        query = ((x_raw.to(self.device) - self.norm_min) / self.scales).detach()
+        distances = []
+        for start in range(0, query.size(0), chunk_size):
+            block = query[start : start + chunk_size]
+            distances.append(torch.cdist(block, self.benign_ref_norm).min(dim=1).values)
+        return float(torch.cat(distances).mean().item())
 
     def evaluate_evasion(
         self,

@@ -11,10 +11,12 @@ wgan:
   b2: 0.9
 
 perturbation:
-  eps_linf: 0.05
+  # Shared by WGAN training and evaluation (persisted in checkpoint metadata).
+  eps_linf: 2.0
   delta_l2: 1.0
-  max_iterations: 100
-  step_size: 0.01
+  max_iterations: 50
+  step_size: 0.1
+  best_of_k_retries: 10
 
 data:
   processed_features: "data/processed/mirai_features.npy"

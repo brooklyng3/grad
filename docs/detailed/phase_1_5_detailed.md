@@ -18,7 +18,7 @@ This document provides an exhaustive, granular engineering record of the streami
 
 ### 2.1. Architectural Distinction Enforced
 To avoid passing raw text fields (e.g. `eth.src`, `ip.src`, MAC address hex strings) directly into numerical models, `scripts/extract_and_train.py` establishes a clean, decoupled two-tier architecture:
-1. `FeatureExtractor.py` parses each packet header line from `mirai.pcap.tsv` and feeds packet metadata into `AfterImage` (`incStatDB`).
+1. `FeatureExtractor.py` parses each packet header line from `mirai.pcap.tsv` and feeds packet metadata into `AfterImage` (`incStatDB`). The pure-Python module is used; the compiled `AfterImage_extrapolate` extension is an opt-in alternative via `KITSUNE_USE_CYTHON=1`.
 2. `AfterImage` computes 100 continuous decaying statistical metrics across 5 damped windows ($\lambda \in \{5, 3, 1, 0.1, 0.01\}$).
 3. The resulting numeric float vector $\mathbf{v} \in \mathbb{R}^{100}$ is written directly to an open memory-mapped disk buffer (`np.lib.format.open_memmap`) and simultaneously passed to `kitnet.process(v)`.
 
@@ -76,8 +76,10 @@ The unsupervised KitNET learner progressed through three distinct operational ph
 
 ## 5. Persistence & Verification
 
-### 5.1. Model Serialization (Isolating Neural Network State)
-To ensure compliance with the fact checker's guidance, only `kitnet` (`K.AnomDetector`) was serialized:
+### 5.1. Model Serialization (Detector State Only)
+The trained `KitNET` object (the same object stored as `K.AnomDetector` in the
+`Kitsune` wrapper) was serialized. It includes the feature map and feature-mapper
+state but not the outer wrapper or its file handles:
 - **Output:** `data/processed/kitsune_mirai_model.pkl` (187.36 KB)
 - Contained variables:
   - Feature mapping index list `kitnet.v` (16 sub-lists mapping 100 features)
@@ -138,8 +140,9 @@ During the initial 55,000 packets (`FMgrace=5000` + `ADgrace=50000`), the model 
 - Packets 0 to 4,999 return $\text{RMSE} = 0.0$ (clustering mode).
 - Packets 5,000 to 54,999 experience continuous stochastic weight updates where reconstruction error is non-stationary.
 Including these 55,000 packets would severely skew the empirical cumulative distribution and artificially suppress the 99.9th percentile threshold $\theta$.
-Therefore, Phase 2 threshold calibration is strictly defined over the **post-convergence benign subset**:
-$$\mathcal{D}_{\text{cal}} = \{ \mathbf{x}_i \mid \text{label}_i = 0 \land i \ge 55,000 \} \quad (|\mathcal{D}_{\text{cal}}| = 66,621 \text{ packets})$$
+Therefore, Phase 2 threshold calibration is strictly defined over the **post-convergence benign subset**. Phase 6 split that range by parity into disjoint calibration and validation halves:
+$$\mathcal{D}_{\text{cal}} = \{ \mathbf{x}_i \mid \text{label}_i = 0 \land (i-55{,}000) \bmod 2 = 0 \} \quad (|\mathcal{D}_{\text{cal}}| = 33,311)$$
+$$\mathcal{D}_{\text{val}} = \{ \mathbf{x}_i \mid \text{label}_i = 0 \land (i-55{,}000) \bmod 2 = 1 \} \quad (|\mathcal{D}_{\text{val}}| = 33,310)$$
 $$\theta = \text{percentile}(\{ \text{RMSE}(\mathbf{x}) \mid \mathbf{x} \in \mathcal{D}_{\text{cal}} \}, 99.9)$$
 
 ### 6.2. Global Normalization Feature Bounds (`get_global_feature_bounds`)

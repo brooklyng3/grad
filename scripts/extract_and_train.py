@@ -5,8 +5,13 @@ Streams packets from data/raw/mirai.pcap.tsv through AfterImage (FE.get_next_vec
 saves the 100-dimensional continuous statistical feature vectors directly to disk via
 numpy.memmap (data/processed/mirai_features.npy), and trains KitNET online.
 
-Only the neural network ensemble (K.AnomDetector) is persisted to
-data/processed/kitsune_mirai_model.pkl, avoiding unpicklable parser state.
+The trained KitNET object (ensemble, output layer, feature map, and feature
+mapper state) is persisted to data/processed/kitsune_mirai_model.pkl.  The
+outer Kitsune wrapper is not persisted because it owns file handles and
+FeatureExtractor parser state.
+
+The pure-Python AfterImage path is the default; set KITSUNE_USE_CYTHON=1 to
+use the compiled extension.
 """
 
 import os

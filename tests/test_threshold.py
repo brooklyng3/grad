@@ -22,13 +22,17 @@ def test_threshold_config_metadata():
     theta = meta["threshold"]
     assert 0.1 <= theta <= 1.0, f"Unusual threshold value: {theta}"
 
-    # 2. Verify benign calibration FPR is strictly near 0.1% (99.9th percentile)
-    b_meta = meta["benign_metrics"]
-    fpr = b_meta["false_positive_rate_pct"]
-    assert 0.05 <= fpr <= 0.15, f"FPR not near 0.1%: {fpr}"
-    assert b_meta["num_evaluated"] == 66621
+    # 2. Calibration/validation splits are disjoint and of equal size
+    cal = meta["benign_calibration"]
+    val = meta["benign_validation"]
+    assert cal["num_evaluated"] == 33311
+    assert val["num_evaluated"] == 33310
 
-    # 3. Verify attack metrics
+    # 3. Validation FPR is out-of-sample and should remain low
+    fpr = val["false_positive_rate_pct"]
+    assert fpr <= 0.5, f"Out-of-sample FPR unexpectedly high: {fpr}"
+
+    # 4. Verify attack metrics
     a_meta = meta["attack_metrics"]
     assert a_meta["num_evaluated"] == 642516
     det_rate = a_meta["detection_rate_pct"]

@@ -2,6 +2,16 @@
 
 This document provides an exhaustive, granular engineering record of the unified evaluation orchestrator, reporting suite, metric mathematical formulations, and experimental telemetry produced during Phase 5, incorporating the reviewer's corrections on subsample extrapolation, manifold envelope shaping, signed covariance preservation, and gradient saturation dynamics.
 
+> [!WARNING]
+> **Superseded results.** The original Phase 5 tables were measured on pre-fix
+> artifacts: the WGAN had been trained at ε = 0.05 and evaluated at ε = 2.0, and
+> its final "holdout" was in-sample. Phase 6 regenerated every measurement on a
+> disjoint seeded split and added clamp-only, untrained-generator, DeepFool, and
+> best-of-k rows. The tables in section 3 below are the post-fix values; the
+> remediation log is `phase_6_detailed.md`. Latencies are single-run
+> measurements and vary by roughly ±20%; the relative ordering is stable. The
+> canonical table with the benign-kNN column is `reports/evaluation_table.md`.
+
 ---
 
 ## 1. Mathematical Formulations (`src/utils/metrics.py` & `src/pipeline/evaluator.py`)
@@ -59,43 +69,48 @@ The root script `run_pipeline.py` integrates all defensive and offensive subsyst
 run_pipeline.py
 ├── Core Components Loader
 │   ├── PyTorchKitNET.from_file(model_path)
-│   ├── threshold_config.yaml -> theta = 0.453419
+│   ├── threshold_config.yaml -> theta = 0.455986
 │   ├── mirai_features.npy (np.load, mmap_mode='r')
 │   └── PipelineEvaluator (CUDA batch_size=256)
 ├── Mode: evaluate_clean
 ├── Mode: fgsm_sweep
 ├── Mode: pgd_attack
-├── Mode: train_wgan (--manifold_shaping)
-└── Mode: evaluate_all (--attack_phase {scanning, flood, both})
+├── Mode: train_wgan (--manifold_shaping, --eps, --train_epochs)
+└── Mode: evaluate_all (--attack_phase {scanning, flood, both}, --retries)
 ```
+
+Phase 6 adds `--seed`, `--eps`, `--retries`, `--train_epochs`, and
+`--deepfool_max_eps`; every evaluation mode is seeded and the training epsilon
+is persisted in checkpoint metadata.
 
 ---
 
 ## 3. Experimental Telemetry & Verification Data
 
 ### 3.1. Clean Baseline Detection Telemetry (`evaluate_clean`)
-- **Benign Validation Subset:** $66,621$ packets (post-grace period: indices $55,000$ to $121,621$).
+- **Benign Validation Subset:** $33,310$ packets (odd-parity post-grace split, disjoint from calibration).
 - **Malicious Evaluation Subset:** $53,543$ packets (sampled across all $642,516$ attack packets).
-- **Execution Time:** $4.88$ seconds ($24,000+$ pkts/sec).
+- **Execution Time:** $3.06$ seconds ($28,000+$ pkts/sec).
 - **Confusion Matrix:**
-  - $\text{TN} = 66,554$
-  - $\text{FP} = 67$ ($\text{FPR} = 0.1006\%$, verifying the calibrated 99.9th percentile threshold)
+  - $\text{TN} = 33,278$
+  - $\text{FP} = 32$ ($\text{FPR} = 0.0961\%$, out-of-sample)
   - $\text{FN} = 6,358$ (Naturally evading baseline attack packets)
   - $\text{TP} = 47,185$ ($\text{TPR} = 88.13\%$)
-- **Precision:** $99.86\%$ | **$\text{F}_1$-Score:** $0.9363$ | **$\text{ROC-AUC}$:** $0.9418$ | **Overall Accuracy:** $94.65\%$
+- **Precision:** $99.93\%$ | **$\text{F}_1$-Score:** $0.9366$ | **$\text{ROC-AUC}$:** $0.9418$ | **Overall Accuracy:** $92.64\%$
+- **Benign kNN baseline (normalised $L_2$):** $0.1383$
 
 ### 3.2. Single-Step FGSM Parameter Sweep (`fgsm_sweep`)
-Evaluated across $1,000$ confirmed detected attack packets ($\text{RMSE}_{\text{orig}} = 13.5061$):
+Evaluated across $1,000$ confirmed detected attack packets ($\text{RMSE}_{\text{orig}} = 13.4764$):
 
 | $\epsilon$ Budget | $\text{ASR}_{\text{cond}}$ | $\text{ER}_{\text{total}}$ | Mean RMSE | Mean $L_\infty$ | Mean $L_2$ | Mean $L_1$ | Active Features ($L_0$) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| $0.01$ | $0.00\%$ | $11.85\%$ | $13.5000$ | $0.0100$ | $0.0974$ | $0.4612$ | $52.68$ |
-| $0.05$ | $0.00\%$ | $11.85\%$ | $13.4756$ | $0.0500$ | $0.4851$ | $2.3060$ | $52.68$ |
-| $0.10$ | $0.00\%$ | $11.85\%$ | $13.4454$ | $0.1000$ | $0.9683$ | $4.6120$ | $52.68$ |
-| $0.25$ | $0.00\%$ | $11.85\%$ | $13.3556$ | $0.2500$ | $2.4088$ | $11.5300$ | $52.68$ |
-| $0.50$ | $0.00\%$ | $11.85\%$ | $13.2057$ | $0.5000$ | $4.7968$ | $23.0600$ | $52.68$ |
-| $1.00$ | $0.00\%$ | $11.85\%$ | $12.9207$ | $1.0000$ | $9.4291$ | $46.1200$ | $52.68$ |
-| $2.00$ | $0.00\%$ | $11.85\%$ | $12.4824$ | $2.0000$ | $18.7428$ | $92.2400$ | $52.68$ |
+| $0.01$ | $0.00\%$ | $11.85\%$ | $13.4703$ | $0.0100$ | $0.0974$ | $0.4612$ | $52.47$ |
+| $0.05$ | $0.00\%$ | $11.85\%$ | $13.4459$ | $0.0500$ | $0.4853$ | $2.3060$ | $52.47$ |
+| $0.10$ | $0.00\%$ | $11.85\%$ | $13.4157$ | $0.1000$ | $0.9689$ | $4.6120$ | $52.47$ |
+| $0.25$ | $0.00\%$ | $11.85\%$ | $13.3258$ | $0.2500$ | $2.4102$ | $11.5300$ | $52.47$ |
+| $0.50$ | $0.00\%$ | $11.85\%$ | $13.1758$ | $0.5000$ | $4.7998$ | $23.0600$ | $52.47$ |
+| $1.00$ | $0.00\%$ | $11.85\%$ | $12.8904$ | $1.0000$ | $9.4348$ | $46.1200$ | $52.47$ |
+| $2.00$ | $0.00\%$ | $11.85\%$ | $12.4483$ | $2.0000$ | $18.7531$ | $92.2400$ | $52.47$ |
 
 *Scientific Clarification on Inactive Features ($L_0 \approx 52.68$):*
 All 100 features in AfterImage are continuous statistical aggregations (1D/2D damped window weights, means, variances, radiuses, covariances, correlations). There are no static packet header or port fields in the 100D vector. The ~47 features that remain unmodified during FGSM sweeps do so because:
@@ -103,34 +118,59 @@ All 100 features in AfterImage are continuous statistical aggregations (1D/2D da
 2. **Zero-Activity Boundary Clamping:** Inactive 2D host-pair cross-statistics sit at zero ($x_j = 0.0$). Any gradient step attempting to step into negative territory is instantly clamped back to $0.0$ by `enforce_feature_bounds`.
 
 ### 3.3. Multi-Paradigm Comparative Benchmark (`evaluate_all`)
-Evaluated across both the Reconnaissance / Scanning and Volumetric Flooding regimes on $1,000$ confirmed detected packets each:
+Evaluated across disjoint holdouts in both the Reconnaissance / Scanning and Volumetric Flooding regimes, $1,000$ confirmed detected packets each, seeded (42), with a shared $\epsilon = 2.0$ budget and a 10-draw cap:
 
-#### Phase A: Reconnaissance / Scanning Phase (Baseline $\text{RMSE} = 3.7961$)
-| Paradigm / Attack | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) | Mean $L_\infty$ | Latency (ms / 1k pkts) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Clean Baseline** | None (Unperturbed) | $3.7961$ | $0.00\%$ | $11.85\%$ | $0.0000$ | $0.0\text{ ms}$ |
-| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $3.7664$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $284.4\text{ ms}^*$ |
-| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $3.6568$ | $0.10\%$ | $11.94\%$ | $0.2500$ | $35.2\text{ ms}$ |
-| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | $2.6743$ | $7.20\%$ | $18.19\%$ | $1.9968$ | $1674.6\text{ ms}$ |
-| **Multi-Step PGD (Manifold)** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.0845$** | **$100.00\%$** | **$100.00\%$** | $8.8060$ | $1513.7\text{ ms}$ |
-| **Polymorphic WGAN-GP (Box)** | $\epsilon = 2.0 \cdot \mathbf{s}$, closed loop | $2.9508$ | $0.00\%$ | $11.85\%$ | $1.9999$ | $19.4\text{ ms}$ |
-| **Polymorphic WGAN-GP (Manifold)** | Envelope Shaping, single pass | **$0.2275$** | **$100.00\%$** | **$100.00\%$** | $9.5688$ | **$1.5\text{ ms}$** |
+> [!WARNING]
+> **Corrected by Phase 6.** The tables below are the post-fix benchmark with
+> disjoint holdout splits, seeded runs, and the shared ε = 2.0 budget. The
+> original Phase 5 tables were measured on the pre-fix artifacts and are
+> superseded. Rows labelled **unbudgeted** are not comparable to ε = 2.0 rows
+> without reading the $L_\infty$ column.
 
-*\*Note on FGSM ($\epsilon = 0.05$) Latency:* The first FGSM call includes one-time PyTorch autograd engine initialization, cuBLAS lazy context allocation, and backward CUDA kernel warm-up overhead (~$250\text{ ms}$). Steady-state single-step FGSM latency across subsequent runs is ~$\mathbf{35-37\text{ ms}}$ (as evidenced by $\epsilon = 0.25$ taking $35.2\text{ ms}$ and Phase B taking $36.8\text{ ms}$).
+#### Phase A: Reconnaissance / Scanning Phase (Baseline $\text{RMSE} = 5.3381$)
+| Paradigm / Attack | Perturbation Constraint | Draws/pkt | Mean Attack RMSE | $\text{ASR}_{\text{cond}}$ | $\text{ER}_{\text{total}}$ | Mean $L_\infty$ | Latency (ms / 1k pkts) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Clean Baseline** | None | 0.00 | $5.3381$ | $0.00\%$ | $11.85\%$ | $0.0000$ | $0.0\text{ ms}$ |
+| **Envelope Clamp Only** | Unbudgeted $[\min,\max]$ | 1.00 | **$0.1136$** | **$100.00\%$** | **$100.00\%$** | $12.9735$ | $2.4\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | 1.00 | $5.3076$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $50.7\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | 1.00 | $5.1910$ | $0.00\%$ | $11.85\%$ | $0.2500$ | $53.2\text{ ms}$ |
+| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1601$ | $2.30\%$ | $13.88\%$ | $1.9991$ | $2321.2\text{ ms}$ |
+| **DeepFool (bounded)** | 50 iters, $\epsilon \le 2.0 \cdot \mathbf{s}$ | 1.00 | $4.5108$ | $0.00\%$ | $11.85\%$ | $1.9683$ | $2387.1\text{ ms}$ |
+| **Multi-Step PGD (Manifold)** | Unbudgeted $[\min,\max]$, 50 steps | 1.00 | **$0.0909$** | **$100.00\%$** | **$100.00\%$** | $13.0325$ | $2170.6\text{ ms}$ |
+| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1836$ | $1.90\%$ | $13.52\%$ | $1.9990$ | $19.2\text{ ms}$ |
+| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 9.83 | $4.1807$ | $1.90\%$ | $13.52\%$ | $1.9991$ | $153.5\text{ ms}$ |
+| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 9.67 | $1.1778$ | $3.90\%$ | $15.29\%$ | $11.4744$ | $148.7\text{ ms}$ |
+| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0782$** | **$99.90\%$** | **$99.91\%$** | $13.8111$ | $7.6\text{ ms}$ |
+| **WGAN-GP (Manifold, untrained)** | Same forward, random weights | 1.00 | $5.6284$ | $0.00\%$ | $11.85\%$ | $6.1065$ | $3.0\text{ ms}$ |
 
-#### Phase B: Volumetric Flooding Phase (Baseline $\text{RMSE} = 13.5061$)
-| Paradigm / Attack | Perturbation Constraint | Mean Attack RMSE | Conditional ASR ($\text{ASR}_{\text{cond}}$) | Overall Evasion Rate ($\text{ER}_{\text{total}}$) | Mean $L_\infty$ | Latency (ms / 1k pkts) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Clean Baseline** | None (Unperturbed) | $13.5061$ | $0.00\%$ | $11.85\%$ | $0.0000$ | $0.0\text{ ms}$ |
-| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | $13.4756$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $36.8\text{ ms}$ |
-| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | $13.3556$ | $0.00\%$ | $11.85\%$ | $0.2500$ | $36.7\text{ ms}$ |
-| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | $12.3060$ | $0.00\%$ | $11.85\%$ | $2.0000$ | $1526.1\text{ ms}$ |
-| **Multi-Step PGD (Manifold)** | 50 steps, $[\mathbf{min}, \mathbf{max}]$ | **$0.0899$** | **$100.00\%$** | **$100.00\%$** | $35.0449$ | $1733.1\text{ ms}$ |
-| **Polymorphic WGAN-GP (Box)** | $\epsilon = 2.0 \cdot \mathbf{s}$, closed loop | $12.4102$ | $0.00\%$ | $11.85\%$ | $1.9998$ | $1.7\text{ ms}$ |
-| **Polymorphic WGAN-GP (Manifold)** | Envelope Shaping, single pass | **$0.2283$** | **$100.00\%$** | **$100.00\%$** | $35.0845$ | **$1.4\text{ ms}$** |
+#### Phase B: Volumetric Flooding Phase (Baseline $\text{RMSE} = 13.4764$)
+| Paradigm / Attack | Perturbation Constraint | Draws/pkt | Mean Attack RMSE | $\text{ASR}_{\text{cond}}$ | $\text{ER}_{\text{total}}$ | Mean $L_\infty$ | Latency (ms / 1k pkts) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Clean Baseline** | None | 0.00 | $13.4764$ | $0.00\%$ | $11.85\%$ | $0.0000$ | $0.0\text{ ms}$ |
+| **Envelope Clamp Only** | Unbudgeted $[\min,\max]$ | 1.00 | **$0.1092$** | **$100.00\%$** | **$100.00\%$** | $34.9663$ | $2.1\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.05 \cdot \mathbf{s}$ | 1.00 | $13.4459$ | $0.00\%$ | $11.85\%$ | $0.0500$ | $50.4\text{ ms}$ |
+| **Single-Step FGSM** | $\epsilon = 0.25 \cdot \mathbf{s}$ | 1.00 | $13.3258$ | $0.00\%$ | $11.85\%$ | $0.2500$ | $45.5\text{ ms}$ |
+| **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $12.2761$ | $0.00\%$ | $11.85\%$ | $2.0000$ | $2274.2\text{ ms}$ |
+| **DeepFool (bounded)** | 50 iters, $\epsilon \le 2.0 \cdot \mathbf{s}$ | 1.00 | $12.9098$ | $0.00\%$ | $11.85\%$ | $2.0000$ | $2135.0\text{ ms}$ |
+| **Multi-Step PGD (Manifold)** | Unbudgeted $[\min,\max]$, 50 steps | 1.00 | **$0.0896$** | **$100.00\%$** | **$100.00\%$** | $34.9754$ | $1668.1\text{ ms}$ |
+| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $12.2905$ | $0.00\%$ | $11.85\%$ | $1.9999$ | $1.9\text{ ms}$ |
+| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 10.00 | $12.2890$ | $0.00\%$ | $11.85\%$ | $1.9999$ | $149.7\text{ ms}$ |
+| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 10.00 | $5.3781$ | $0.00\%$ | $11.85\%$ | $19.8139$ | $195.4\text{ ms}$ |
+| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0367$** | **$100.00\%$** | **$100.00\%$** | $35.6243$ | $1.8\text{ ms}$ |
+| **WGAN-GP (Manifold, untrained)** | Same forward, random weights | 1.00 | $15.0501$ | $0.00\%$ | $11.85\%$ | $15.8726$ | $5.0\text{ ms}$ |
 
-*Inference Latency Justification:*
-In online network evasion, latency is critical. 50-step PGD requires $1,733.1\text{ ms}$ per 1,000 packets because it computes 50 forward passes and 50 autograd `.backward()` operations through all 16 micro-autoencoders. This creates unbearable delay that causes connection timeouts and packet drops at wire speed. In contrast, Polymorphic WGAN-GP (Manifold) generates equivalent $100.00\%$ evasion in **$1.4\text{ ms}$ per 1,000 packets ($>700,000\text{ pkts/sec}$)** — a **$1,237\times$ speedup** — proving the decisive operational necessity of generative perturbation in real-time adversarial ML.
+*Interpretation (post-fix):*
+The untrained manifold generator scores 0% (RMSE 5.63–15.05), while the trained
+generator reaches 99.9–100% at **lower** RMSE than the naive clamp (0.078 vs
+0.114 scanning; 0.037 vs 0.109 flood) and closer benign-neighbour distance
+(0.86/0.62 vs 0.91/0.87; benign baseline 0.14). The learned network is
+therefore doing real work. The clamp remains faster and is a useful lower
+bound.
+
+Best-of-k leaves both ASR rows unchanged (conditional mode collapse). Ten
+feedback-refinement steps raise scanning to 3.90% and cut flood RMSE to 5.38,
+but total L∞ grows to 11.5/19.8, so it is an aggregate-budget result. The full
+table with kNN distances is in `reports/evaluation_table.md`.
 
 ---
 
@@ -146,6 +186,7 @@ This guarantees:
 1. **Unsigned Features ($\ge 0.0$):** Packet rate weights, means, variances, radiuses, and magnitudes cannot step negative.
 2. **Covariance Features (Signed in $(-\infty, \infty)$):** The 10 Covariance features (indices 20, 27, 34, 41, 48, 70, 77, 84, 91, 98) preserve valid negative cross-covariance statistics between source-destination IP and MAC pairs.
 3. **Correlation Features ($[-1.0, 1.0]$):** The 10 Pearson Correlation Coefficient (PCC) features (indices 21, 28, 35, 42, 49, 71, 78, 85, 92, 99) are strictly bounded within valid mathematical limits.
+4. **MTU and IAT bounds (Phase 6):** Packet-size mean channels (indices 1, 4, 7, 10, 13, 16, 23, 30, 37, 44, 66, 73, 80, 87, 94) are clamped to $[0, 1500]$ bytes; jitter mean/std channels are clamped to $\ge 0$. TTL is not present in AfterImage and is therefore not enforceable at this layer.
 
 ---
 
@@ -154,12 +195,20 @@ This guarantees:
 | Path | Description |
 | :--- | :--- |
 | `src/utils/metrics.py` | Anomaly detection metrics, ROC-AUC, distortion aggregation, and report exporters. |
+| `src/utils/data_splits.py` | Deterministic disjoint attack and benign splits (Phase 6). |
+| `src/utils/seed.py` | Central RNG seeding for reproducible runs (Phase 6). |
 | `src/attacker/generator.py` | `PolymorphicGenerator` supporting both additive box and manifold envelope shaping modes. |
 | `src/pipeline/feedback_loop.py` | Closed feedback loop with signed covariance preservation and manifold training mode. |
 | `src/pipeline/evaluator.py` | Evaluator engine with corrected population extrapolation for subsample evaluation. |
 | `run_pipeline.py` | Unified CLI orchestrator supporting scanning and flood attack regimes. |
-| `data/attack_samples/wgan_manifold_generator.pt` | Trained Manifold-Shaping WGAN-GP generator checkpoint (100% ASR). |
-| `data/attack_samples/wgan_generator.pt` | Trained Additive Box WGAN-GP generator checkpoint. |
+| `data/attack_samples/wgan_manifold_generator.pt` | Trained manifold generator checkpoint (99.9–100% ASR; unclamped learned target). |
+| `data/attack_samples/wgan_generator.pt` | Trained additive-box WGAN-GP generator checkpoint. |
+| `data/attack_samples/*.meta.json` | Persisted training epsilon, seed, mode, and best-epoch metadata (Phase 6). |
+| `reports/wgan_training_summary.json` | Additive WGAN training history and holdout summary. |
+| `reports/wgan_manifold_summary.json` | Manifold WGAN training history and holdout summary. |
+| `README.md` | Setup, protocol, and reproduction instructions. |
+| `docs/overview/phase_6_overview.md` | Remediation summary and post-fix headline results. |
+| `docs/detailed/phase_6_detailed.md` | Remediation log and post-fix benchmark. |
 | `reports/evaluation_table.md` | Dual-regime comparative benchmark tables (Scanning & Volumetric Flood). |
 | `reports/clean_detection_metrics.json` | Baseline detection telemetry (TPR, FPR, F1, ROC-AUC). |
 | `reports/pgd_benchmark.json` | Multi-step PGD and manifold traffic-shaping telemetry. |

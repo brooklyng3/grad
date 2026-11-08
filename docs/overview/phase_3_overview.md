@@ -8,7 +8,7 @@ This document provides a high-level executive summary of the offensive adversari
 1. **White-Box Gradient Baselines (`src/attacker/perturbations.py`):**
    - **Fast Gradient Sign Method (FGSM):** Autoencoder loss minimization baseline.
    - **Multi-Step Projected Gradient Descent (PGD):** Resolves single-step overshooting and vanishing sigmoid gradients on extreme flood features, achieving 37% evasion under $\epsilon=2.0$.
-   - **Traffic-Shaping Manifold Projection:** Models real-world packet pacing by projecting rate features into benign operational envelopes $[\mathbf{norm\_min}, \mathbf{norm\_max}]$, achieving 100% evasion on detected Mirai attacks.
+   - **Learned Manifold Target (WGAN):** The generator predicts the negative step needed to land each feature in the benign envelope, with no post-hoc clamp. Trained: 99.9–100% evasion; untrained: 0%. The mode is **unbudgeted**; a clamp-only baseline remains for attribution.
    - **DeepFool Baseline:** Iterative projection calculating minimal orthogonal gradient steps toward the decision boundary ($\text{RMSE} \le \theta$).
    - **Epsilon Budget Sweep:** Evaluated across $\epsilon \in [0.05, 5.0]$ on detected packets to measure empirical resistance curves.
 2. **Conditional Polymorphic WGAN-GP (`src/attacker/generator.py`):**
@@ -25,7 +25,7 @@ This document provides a high-level executive summary of the offensive adversari
    - Differentiates **Conditional ASR** ($\text{ASR}_{\text{cond}}$) strictly computed over detected packets ($\text{RMSE}_{\text{orig}} > \theta$) from **Overall Evasion Rate** ($\text{ER}_{\text{total}}$), preventing the $76,123$ pre-evading packets from artificially inflating the attacker's success.
 5. **Quality & Test Automation (`tests/test_attacker.py`):**
    - Implemented unit tests for FGSM, DeepFool, PolymorphicGenerator, and WGANDiscriminator.
-   - Full test suite: **14 / 14 passing tests** across all project modules with 100% Black and Flake8 compliance.
+   - Test suite at the time: **14 / 14 passing**; **28 / 28** after the Phase 6 remediation.
 
 ---
 
@@ -36,7 +36,7 @@ This document provides a high-level executive summary of the offensive adversari
 | **FGSM Attack** | `src/attacker/perturbations.py` | `model`, $\mathbf{x}_{\text{det}}$, $\epsilon$, $\mathbf{s}_{\text{global}}$ | $\mathbf{x}_{\text{adv}}$, $\text{RMSE}_{\text{adv}}$ with domain bounds |
 | **PGD Multi-Step Attack** | `src/attacker/perturbations.py` | `model`, $\mathbf{x}_{\text{det}}$, $\theta$, $\alpha$, $\epsilon$, steps | Multi-step descent with box or manifold projection |
 | **DeepFool Attack** | `src/attacker/perturbations.py` | `model`, $\mathbf{x}_{\text{det}}$, $\theta$, $\mathbf{s}_{\text{global}}$ | Minimal iterative step to $\text{RMSE} \le \theta$ |
-| **Polymorphic Generator** | `src/attacker/generator.py` | $\mathbf{z} \in \mathbb{R}^{32}, \tilde{\mathbf{x}} \in \mathbb{R}^{100}$ | Perturbed candidates in $[-\epsilon, +\epsilon]$ normalized space |
+| **Polymorphic Generator** | `src/attacker/generator.py` | $\mathbf{z} \in \mathbb{R}^{32}, \tilde{\mathbf{x}} \in \mathbb{R}^{100}$ | Additive: bounded in $[-\epsilon, +\epsilon]$. Manifold: unbudgeted learned target, no post-hoc clamp |
 | **WGAN Critic** | `src/attacker/discriminator.py` | $\tilde{\mathbf{x}} \in \mathbb{R}^{100}$ | Scalar realism score + Gradient Penalty ($\lambda_{GP}=10$) |
 
 ---

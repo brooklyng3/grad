@@ -7,6 +7,10 @@ perturbations as mandated by Section 5 of AGENTS.md:
   2. Relative / feature-range-scaled perturbation budgets (L_inf and L2).
   3. Non-negative bounds strictly on unsigned physical features (counts, weights,
      means, standard deviations, magnitudes, radii).
+  4. MTU upper bound on packet-size mean channels and non-negative IAT bounds.
+
+TTL is not part of the AfterImage feature vector (the extractor does not
+dissect ip.ttl), so it cannot be enforced at this layer.
 """
 
 from typing import Union, Optional, List
@@ -28,6 +32,41 @@ PCC_FEATURE_INDICES: List[int] = [21, 28, 35, 42, 49, 71, 78, 85, 92, 99]
 SIGNED_FEATURE_INDICES: List[int] = sorted(COV_FEATURE_INDICES + PCC_FEATURE_INDICES)
 UNSIGNED_FEATURE_INDICES: List[int] = [
     i for i in range(100) if i not in SIGNED_FEATURE_INDICES
+]
+
+# Packet-size mean channels (MI, HH, and HpHp blocks, mean component of each
+# lambda window).  These carry frame-length means in bytes and are bounded by
+# the MTU.  TTL is not part of the AfterImage vector (FeatureExtractor does not
+# dissect ip.ttl), so it cannot be enforced at feature level.
+SIZE_MEAN_INDICES: List[int] = [
+    1,
+    4,
+    7,
+    10,
+    13,  # MI means
+    16,
+    23,
+    30,
+    37,
+    44,  # HH means
+    66,
+    73,
+    80,
+    87,
+    94,  # HpHp means
+]
+# Jitter (inter-arrival-time) mean and standard-deviation channels.
+IAT_STAT_INDICES: List[int] = [
+    51,
+    54,
+    57,
+    60,
+    63,  # jitter means
+    52,
+    55,
+    58,
+    61,
+    64,  # jitter stds
 ]
 
 
@@ -179,6 +218,23 @@ def enforce_feature_bounds(
                 pcc_idx,
                 torch.clamp(out.index_select(-1, pcc_idx), min=-1.0, max=1.0),
             )
+            # Packet-size means must fit the MTU; IAT statistics are non-negative
+            size_mean_idx = torch.tensor(SIZE_MEAN_INDICES, device=x.device)
+            out.index_copy_(
+                -1,
+                size_mean_idx,
+                torch.clamp(
+                    out.index_select(-1, size_mean_idx),
+                    min=float(MIN_PACKET_BYTES),
+                    max=float(MTU_MAX_BYTES),
+                ),
+            )
+            iat_idx = torch.tensor(IAT_STAT_INDICES, device=x.device)
+            out.index_copy_(
+                -1,
+                iat_idx,
+                torch.clamp(out.index_select(-1, iat_idx), min=MIN_IAT),
+            )
             # Covariance features are allowed to be negative; unconstrained
         elif min_bounds is None and not enforce_afterimage_domain:
             out = torch.clamp(out, min=0.0)
@@ -210,6 +266,11 @@ def enforce_feature_bounds(
             out[..., PCC_FEATURE_INDICES] = np.clip(
                 out[..., PCC_FEATURE_INDICES], -1.0, 1.0
             )
+            # Packet-size means must fit the MTU; IAT statistics are non-negative
+            out[..., SIZE_MEAN_INDICES] = np.clip(
+                out[..., SIZE_MEAN_INDICES], MIN_PACKET_BYTES, MTU_MAX_BYTES
+            )
+            out[..., IAT_STAT_INDICES] = np.maximum(out[..., IAT_STAT_INDICES], MIN_IAT)
             # Covariances remain untouched
         elif min_bounds is None and not enforce_afterimage_domain:
             out = np.clip(out, 0.0, None)

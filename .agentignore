@@ -4,6 +4,7 @@
 *.pcapng
 *.tsv
 *.csv
+!reports/*.csv
 mirai.pcap
 mirai.pcap.tsv
 mirai_labels.csv
@@ -32,3 +33,4 @@ dist/
 venv/
 .venv/
 env/
+*:Zone.Identifier

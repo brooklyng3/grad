@@ -2,14 +2,15 @@
 Phase 2: Defender Evaluation & Alert Threshold Calibration.
 
 Evaluates the trained KitNET model (PyTorchKitNET) on the full Mirai dataset:
-  1. Filters post-convergence benign packets (i >= 55,000, label == 0; 66,621 pkts).
-  2. Calibrates the anomaly alert threshold theta at the 99.9th percentile:
-         theta = np.percentile(benign_rmses, 99.9)
-  3. Evaluates detection metrics across the 642,516 Mirai attack packets (i >= 121,621):
+  1. Splits post-convergence benign packets (i >= 55,000) by parity into disjoint
+     calibration and validation halves.
+  2. Calibrates the anomaly alert threshold theta on the calibration half only at
+     the 99.9th percentile.
+  3. Measures the false positive rate out-of-sample on the validation half.
+  4. Evaluates detection metrics across the 642,516 Mirai attack packets:
          - Detection Rate (Recall / True Positive Rate)
-         - False Alarm Rate (False Positive Rate on post-convergence benign traffic)
          - Baseline Evasion Rate (attacks <= theta)
-  4. Saves threshold calibration metadata to data/processed/threshold_config.yaml.
+  5. Saves threshold calibration metadata to data/processed/threshold_config.yaml.
 """
 
 import os
@@ -24,6 +25,7 @@ import yaml
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("Kitsune-py"))
 from src.defender.torch_kitnet import PyTorchKitNET  # noqa: E402
+from src.utils.data_splits import benign_indices_for_split  # noqa: E402
 
 
 def load_dataset(
@@ -86,57 +88,68 @@ def evaluate_and_calibrate(
     print(f"Total dataset packets:       {total_packets:,}")
     print(f"First attack packet index:   {first_attack_idx:,}")
 
-    # 3. Batch Evaluation on Post-Convergence Benign Packets
-    # Benign calibration range: [grace_period, first_attack_idx)
-    benign_indices = np.where(
-        (labels == 0) & (np.arange(total_packets) >= grace_period)
-    )[0]
-    num_cal_benign = len(benign_indices)
-    print(f"\nEvaluating {num_cal_benign:,} post-convergence benign packets on GPU...")
+    # 3. Disjoint benign calibration and validation splits
+    # Calibration = even relative index, validation = odd relative index.
+    calibration_indices = benign_indices_for_split(labels, "calibration")
+    validation_indices = benign_indices_for_split(labels, "validation")
+    num_cal_benign = len(calibration_indices)
+    num_val_benign = len(validation_indices)
 
-    benign_rmses = []
+    def score_indices(indices: np.ndarray) -> np.ndarray:
+        out = []
+        with torch.no_grad():
+            for start_idx in range(0, len(indices), batch_size):
+                batch_sub_idx = indices[start_idx : start_idx + batch_size]
+                batch_x = torch.tensor(
+                    features[batch_sub_idx], dtype=torch.float32, device=device
+                )
+                out.append(model(batch_x).cpu().numpy())
+        return np.concatenate(out)
+
+    print(
+        f"\nScoring {num_cal_benign:,} calibration and "
+        f"{num_val_benign:,} validation benign packets on GPU..."
+    )
     start_time = time.time()
-
-    with torch.no_grad():
-        for start_idx in range(0, num_cal_benign, batch_size):
-            batch_sub_idx = benign_indices[start_idx : start_idx + batch_size]
-            batch_x = torch.tensor(
-                features[batch_sub_idx], dtype=torch.float32, device=device
-            )
-            batch_rmse = model(batch_x)
-            benign_rmses.append(batch_rmse.cpu().numpy())
-
-    benign_rmses = np.concatenate(benign_rmses)
+    benign_rmses = score_indices(calibration_indices)
     cal_eval_time = time.time() - start_time
     print(
-        f"Benign evaluation complete in {cal_eval_time:.2f}s "
+        f"Benign calibration scoring complete in {cal_eval_time:.2f}s "
         f"({num_cal_benign / cal_eval_time:.1f} pkts/s)"
     )
 
-    # 4. Calibrate Alert Threshold Theta
+    # 4. Calibrate Alert Threshold Theta on the calibration split only
     theta = float(np.percentile(benign_rmses, percentile_target))
     mean_benign_rmse = float(np.mean(benign_rmses))
     std_benign_rmse = float(np.std(benign_rmses))
     max_benign_rmse = float(np.max(benign_rmses))
     min_benign_rmse = float(np.min(benign_rmses))
 
-    # False Positive Rate on post-convergence benign traffic
-    fp_count = int(np.sum(benign_rmses > theta))
-    fpr = (fp_count / num_cal_benign) * 100.0
+    # 5. Measure FPR out-of-sample on the disjoint validation split
+    validation_rmses = score_indices(validation_indices)
+    fp_count = int(np.sum(validation_rmses > theta))
+    fpr = (fp_count / num_val_benign) * 100.0
+    val_mean = float(np.mean(validation_rmses))
+    val_std = float(np.std(validation_rmses))
 
     print("-" * 70)
     print("THRESHOLD CALIBRATION RESULTS:")
     print(f"  Calculated Theta (θ):       {theta:.6f}")
     print(
-        f"  Benign RMSE (mean ± std):   {mean_benign_rmse:.6f} ± {std_benign_rmse:.6f}"
+        f"  Calibration RMSE (mean ± std): "
+        f"{mean_benign_rmse:.6f} ± {std_benign_rmse:.6f}"
     )
     print(
-        f"  Benign RMSE (min - max):    {min_benign_rmse:.6f} - {max_benign_rmse:.6f}"
+        f"  Calibration RMSE (min - max):  "
+        f"{min_benign_rmse:.6f} - {max_benign_rmse:.6f}"
     )
-    print(f"  False Positive Rate (FPR):  {fpr:.3f}% ({fp_count}/{num_cal_benign})")
+    print(
+        f"  Validation FPR (out-of-sample): {fpr:.3f}% "
+        f"({fp_count}/{num_val_benign}), mean RMSE {val_mean:.6f}"
+    )
     print("-" * 70)
 
-    # 5. Batch Evaluation Across Malicious Traffic (Attack Packets)
+    # 6. Batch Evaluation Across Malicious Traffic (Attack Packets)
     malicious_indices = np.where(labels == 1)[0]
     num_attacks = len(malicious_indices)
     print(f"\nEvaluating {num_attacks:,} malicious Mirai packets on GPU...")
@@ -160,7 +173,7 @@ def evaluate_and_calibrate(
         f"({num_attacks / attack_eval_time:.1f} pkts/s)"
     )
 
-    # 6. Baseline Defensive & Evasion Metrics
+    # 7. Baseline Defensive & Evasion Metrics
     detected_count = int(np.sum(malicious_rmses > theta))
     evaded_count = int(np.sum(malicious_rmses <= theta))
     detection_rate = (detected_count / num_attacks) * 100.0
@@ -183,18 +196,23 @@ def evaluate_and_calibrate(
     )
     print("=" * 70)
 
-    # 7. Persist Threshold Configuration & Evaluation Metrics
+    # 8. Persist Threshold Configuration & Evaluation Metrics
     output_meta_path = "data/processed/threshold_config.yaml"
     results = {
         "threshold": theta,
         "percentile": percentile_target,
         "grace_period_excluded": grace_period,
-        "benign_metrics": {
+        "benign_calibration": {
             "num_evaluated": num_cal_benign,
             "mean_rmse": mean_benign_rmse,
             "std_rmse": std_benign_rmse,
             "min_rmse": min_benign_rmse,
             "max_rmse": max_benign_rmse,
+        },
+        "benign_validation": {
+            "num_evaluated": num_val_benign,
+            "mean_rmse": val_mean,
+            "std_rmse": val_std,
             "false_positive_count": fp_count,
             "false_positive_rate_pct": fpr,
         },

@@ -21,14 +21,24 @@ This document provides a high-level executive summary of the closed-loop adversa
    - Maintained VRAM strictly $< 1.8$ GB (well under the 4 GB limit) with periodic cache flushes (`torch.cuda.empty_cache()`).
 4. **Testing & QA Verification:**
    - Implemented `tests/test_pipeline.py`.
-   - **All 17 project tests passing** across all modules with 100% Black and Flake8 compliance.
+   - **All 17 project tests passing at the time; 28 / 28 after Phase 6**, with Black and Flake8 clean.
 
 ---
 
 ## 2. Experimental Telemetry & Comparative Summary
 
+> [!WARNING]
+> **Phase 6 corrections.** The original run trained at ε = 0.05 but evaluated
+> at ε = 2.0, and its "holdout" evaluation used training samples. After the
+> fixes (shared persisted ε, disjoint stratified split, holdout selection,
+> `n_critic`), the budgeted WGAN reaches 1.90% on the scanning holdout and 0.00%
+> on flood, with 0.10% on the all-regime holdout. After removing the post-hoc
+> clamp, the trained manifold generator reaches 99.9–100% at RMSE 0.078/0.037,
+> beating the naive clamp (0.114/0.109), while the untrained generator scores
+> 0%. Full log: `phase_6_detailed.md`.
+
 > [!NOTE]
-> **Dataset Sampling Scope:** The 1,000 detected attack samples evaluated during Phase 4 were drawn from the immediate onset of the Mirai attack ($i \approx 121,621$ to $123,000$, representing the initial host probing and scanning onset, baseline $\text{RMSE}_{\text{orig}} = 1.6798$). In Phase 5, the evaluation framework expands to benchmark both an extended reconnaissance scanning window ($i \in [121,621, 131,621]$, baseline $\text{RMSE} = 3.7961$) and the massive volumetric flooding regime ($i \ge 130,000$, baseline $\text{RMSE} = 13.5061$).
+> **Historical sampling scope (pre-fix):** the 1,000 detected samples came from the immediate attack onset and were inside the WGAN training pool. Phase 6 switched to a disjoint modulo split; corrected values are in `phase_6_detailed.md`.
 
 Across 1,000 detected attack packets, the evaluation engine measured the following evasion performance across attack paradigms:
 

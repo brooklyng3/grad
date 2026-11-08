@@ -1,13 +1,19 @@
-#Check if cython code has been compiled
+# Check if the optional Cython code has been compiled.
+# The pure-Python AfterImage implementation is the default; set
+# KITSUNE_USE_CYTHON=1 to opt into the compiled extension.
+import importlib.util
 import os
 import subprocess
 
-use_extrapolation=False #experimental correlation code
+use_extrapolation = os.environ.get("KITSUNE_USE_CYTHON") == "1"
 if use_extrapolation:
     print("Importing AfterImage Cython Library")
-    if not os.path.isfile("AfterImage.c"): #has not yet been compiled, so try to do so...
-        cmd = "python setup.py build_ext --inplace"
-        subprocess.call(cmd,shell=True)
+    if importlib.util.find_spec("AfterImage_extrapolate") is None:
+        here = os.path.dirname(os.path.abspath(__file__))
+        subprocess.call(
+            ["python", os.path.join(here, "setup.py"), "build_ext", "--inplace"],
+            cwd=here,
+        )
 #Import dependencies
 import netStat as ns
 import csv

@@ -9,11 +9,20 @@ This document provides an exhaustive, granular engineering record of the closed-
   - `src/pipeline/evaluator.py`: `PipelineEvaluator` class.
   - `src/pipeline/feedback_loop.py`: `AdversarialFeedbackLoop` class.
 - **Pre-trained Defender:** `data/processed/kitsune_mirai_model.pkl` loaded via `PyTorchKitNET`.
-- **Pre-computed Threshold:** $\theta = 0.453419$ from `data/processed/threshold_config.yaml`.
-- **Training Pools:**
+- **Pre-computed Threshold:** $\theta = 0.453419$ in the original run (0.455986 after Phase 6 recalibration) from `data/processed/threshold_config.yaml`.
+- **Training Pools (as originally run):**
   - Benign Pool: $10,000$ post-convergence benign samples ($i \ge 55,000$).
   - Malicious Pool: $10,000$ strictly detected attack samples ($\text{RMSE}_{\text{orig}} > \theta$).
 - **Compute Hardware:** Intel Core i5-9400F, 16 GB DDR4, NVIDIA GeForce GTX 1660 SUPER (CUDA).
+
+> [!WARNING]
+> **Historical caveats corrected in Phase 6.** The original run trained at
+> `eps_linf = 0.05` but evaluated at $\epsilon = 2.0$. The final evaluation
+> sliced `x_mal_raw[:1000]`, which are training samples, despite being labelled
+> a holdout. The malicious pool was the first 20,000 attacks (3% of the
+> population, all scanning). Phase 6 fixed all three: shared persisted ε,
+> disjoint modulo split, stratified sampling, holdout model selection, and
+> `n_critic` execution. See `phase_6_detailed.md` and section 6 below.
 
 ---
 
@@ -65,10 +74,10 @@ Where:
 - **Critic Convergence:** $\mathcal{L}_C$ converged from $-2.41$ to $-23.27$.
 - **Generator Evasion:** Conditional ASR on detected batches steadily climbed from $0.20\%$ to $6.70\%$ under $\epsilon = 2.0$.
 
-### 4.2. Comparative Robustness Matrix (Evaluated on 1,000 Holdout Detected Attacks)
+### 4.2. Comparative Robustness Matrix (Original run: 1,000 **in-sample** detected attacks)
 
 > [!NOTE]
-> **Dataset Sampling Scope:** The 1,000 detected attack samples evaluated in this Phase 4 benchmark matrix were drawn from the initial onset of the Mirai attack ($i \approx 121,621$ to $123,000$, representing the initial host probing and scanning onset, baseline $\text{RMSE}_{\text{orig}} = 1.6798$). In Phase 5, the evaluation suite expands to benchmark both an extended reconnaissance scanning window ($i \in [121,621, 131,621]$, baseline $\text{RMSE} = 3.7961$) and the subsequent massive volumetric flooding regime ($i \ge 130,000$, baseline $\text{RMSE} = 13.5061$).
+> **Historical sampling scope (pre-fix):** the 1,000 detected attack samples were drawn from the initial attack onset, and — as Phase 6 discovered — those packets were also inside the WGAN training pool. The corrected protocol uses a disjoint modulo split; see section 6 below and `phase_6_detailed.md`.
 
 | Method | Perturbation Paradigm | Mean Attack RMSE | $\text{ASR}_{\text{cond}}$ | $\text{ER}_{\text{total}}$ | Mean $L_\infty$ |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -91,4 +100,26 @@ Where:
 - `test_evaluator_score_batches`: Validates GPU batching and non-negative RMSE outputs.
 - `test_evaluator_evasion_metrics`: Confirms distance norm calculations ($L_0, L_1, L_2, L_\infty$) and metric isolation.
 - `test_feedback_loop_initialization`: Validates parameter parsing and CUDA device binding.
-- **Full Suite Status:** 17 / 17 tests passing across all test files with zero lint warnings.
+- **Full Suite Status:** 17 / 17 tests passing at the time; 28 / 28 after Phase 6.
+
+---
+
+## 6. Phase 6 Corrected Results (disjoint holdout, ε = 2.0)
+
+The additive generator was retrained with the corrected protocol. Best epoch was
+selected by held-out ASR; training and evaluation both used ε = 2.0.
+
+| Test | Conditional ASR |
+|---|---:|
+| Original saved checkpoint, any ε including training window | 0.00% |
+| Corrected training, final disjoint holdout (spread over all attacks) | 0.10% |
+| Corrected generator, Phase A scanning holdout | **1.90%** |
+| Corrected generator, Phase B flood holdout | **0.00%** |
+| Corrected generator, scanning holdout, best-of-10 draws | **1.90%** (9.83 draws/pkt) |
+| Corrected generator, scanning holdout, 10-step refine | **3.90%** (aggregate L∞ 11.47) |
+
+The budgeted WGAN is therefore no longer non-functional, but it remains far
+weaker than the unbudgeted manifold attack (100%). After removing the post-hoc
+clamp (second review round), the **trained** manifold generator beats the naive
+clamp on RMSE (0.078 vs 0.114 scanning; 0.037 vs 0.109 flood), while the
+untrained generator scores 0%. See `phase_6_detailed.md` section 15.

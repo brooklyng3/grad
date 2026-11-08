@@ -6,20 +6,20 @@
       "conditional_asr_pct": 0.0,
       "overall_evasion_rate_pct": 11.847642704617472,
       "rmse_metrics": {
-        "initial_mean": 13.335124969482422,
-        "initial_median": 13.948009490966797,
-        "adversarial_mean": 12.729305267333984,
-        "adversarial_median": 13.36468505859375,
-        "adversarial_min": 1.1271212100982666,
-        "adversarial_max": 14.756837844848633
+        "initial_mean": 13.476364135742188,
+        "initial_median": 13.983617782592773,
+        "adversarial_mean": 12.8704195022583,
+        "adversarial_median": 13.3994140625,
+        "adversarial_min": 4.419566631317139,
+        "adversarial_max": 14.723179817199707
       },
       "perturbation_distances": {
         "mean_linf": 1.0000001192092896,
         "max_linf": 1.000000238418579,
-        "mean_l2": 3.8720195293426514,
-        "max_l2": 3.9054784774780273,
-        "mean_l1": 16.6207332611084,
-        "mean_l0_modified_features": 52.67300033569336
+        "mean_l2": 3.8721656799316406,
+        "max_l2": 3.9025938510894775,
+        "mean_l1": 16.60657501220703,
+        "mean_l0_modified_features": 52.474998474121094
       },
       "config_name": "PGD (Box, 20 steps, eps=1.0)"
     },
@@ -29,20 +29,20 @@
       "conditional_asr_pct": 0.0,
       "overall_evasion_rate_pct": 11.847642704617472,
       "rmse_metrics": {
-        "initial_mean": 13.335124969482422,
-        "initial_median": 13.948009490966797,
-        "adversarial_mean": 12.135375022888184,
-        "adversarial_median": 12.79432487487793,
-        "adversarial_min": 0.6012020111083984,
-        "adversarial_max": 14.108561515808105
+        "initial_mean": 13.476364135742188,
+        "initial_median": 13.983617782592773,
+        "adversarial_mean": 12.276126861572266,
+        "adversarial_median": 12.822725296020508,
+        "adversarial_min": 3.756727457046509,
+        "adversarial_max": 14.075148582458496
       },
       "perturbation_distances": {
-        "mean_linf": 2.0000011920928955,
+        "mean_linf": 2.0000014305114746,
         "max_linf": 2.0000014305114746,
-        "mean_l2": 7.662328720092773,
-        "max_l2": 7.762268543243408,
-        "mean_l1": 31.21875,
-        "mean_l0_modified_features": 52.68899917602539
+        "mean_l2": 7.667709827423096,
+        "max_l2": 7.760175704956055,
+        "mean_l1": 31.224109649658203,
+        "mean_l0_modified_features": 52.472999572753906
       },
       "config_name": "PGD (Box, 50 steps, eps=2.0)"
     },
@@ -50,22 +50,22 @@
       "num_detected_evaluated": 1000,
       "num_successfully_evaded": 1000,
       "conditional_asr_pct": 99.9999999999999,
-      "overall_evasion_rate_pct": 12.003280852149985,
+      "overall_evasion_rate_pct": 100.0,
       "rmse_metrics": {
-        "initial_mean": 13.335124969482422,
-        "initial_median": 13.948009490966797,
-        "adversarial_mean": 0.09063723683357239,
-        "adversarial_median": 0.08494198322296143,
-        "adversarial_min": 0.04719311743974686,
-        "adversarial_max": 0.19279740750789642
+        "initial_mean": 13.476364135742188,
+        "initial_median": 13.983617782592773,
+        "adversarial_mean": 0.09001480042934418,
+        "adversarial_median": 0.0849323719739914,
+        "adversarial_min": 0.049450088292360306,
+        "adversarial_max": 0.1916595697402954
       },
       "perturbation_distances": {
-        "mean_linf": 34.64932632446289,
-        "max_linf": 37.99066162109375,
-        "mean_l2": 72.84343719482422,
-        "max_l2": 84.03298950195312,
-        "mean_l1": 243.31881713867188,
-        "mean_l0_modified_features": 69.54199981689453
+        "mean_linf": 34.97538375854492,
+        "max_linf": 37.956356048583984,
+        "mean_l2": 73.58751678466797,
+        "max_l2": 83.85311126708984,
+        "mean_l1": 245.64244079589844,
+        "mean_l0_modified_features": 69.7699966430664
       },
       "config_name": "Manifold Shaping (20 steps)"
     },
@@ -73,22 +73,22 @@
       "num_detected_evaluated": 1000,
       "num_successfully_evaded": 1000,
       "conditional_asr_pct": 99.9999999999999,
-      "overall_evasion_rate_pct": 12.003280852149985,
+      "overall_evasion_rate_pct": 100.0,
       "rmse_metrics": {
-        "initial_mean": 13.335124969482422,
-        "initial_median": 13.948009490966797,
-        "adversarial_mean": 0.090270034968853,
-        "adversarial_median": 0.0849291980266571,
-        "adversarial_min": 0.04719311743974686,
-        "adversarial_max": 0.18419590592384338
+        "initial_mean": 13.476364135742188,
+        "initial_median": 13.983617782592773,
+        "adversarial_mean": 0.08960752189159393,
+        "adversarial_median": 0.0849175900220871,
+        "adversarial_min": 0.049450092017650604,
+        "adversarial_max": 0.17800261080265045
       },
       "perturbation_distances": {
-        "mean_linf": 34.6495246887207,
-        "max_linf": 37.99066162109375,
-        "mean_l2": 72.84334564208984,
-        "max_l2": 84.03298950195312,
-        "mean_l1": 243.28854370117188,
-        "mean_l0_modified_features": 69.36799621582031
+        "mean_linf": 34.97538375854492,
+        "max_linf": 37.956356048583984,
+        "mean_l2": 73.58631134033203,
+        "max_l2": 83.85311126708984,
+        "mean_l1": 245.61940002441406,
+        "mean_l0_modified_features": 69.64399719238281
       },
       "config_name": "Manifold Shaping (50 steps)"
     }

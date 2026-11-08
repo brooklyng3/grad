@@ -11,7 +11,13 @@ import pytest
 import torch
 
 from src.defender.torch_kitnet import PyTorchKitNET
-from src.attacker.perturbations import fgsm_attack, deepfool_attack
+from src.attacker.perturbations import (
+    deepfool_attack,
+    envelope_projection,
+    fgsm_attack,
+    wgan_best_of_k,
+    wgan_refine,
+)
 from src.attacker.generator import PolymorphicGenerator
 from src.attacker.discriminator import (
     WGANDiscriminator,
@@ -121,6 +127,86 @@ def test_polymorphic_generator(defender_setup):
     # Check that perturbation in normalized space satisfies eps bound
     norm_diff = torch.abs((x_adv_raw - x_raw) / scales)
     assert torch.max(norm_diff).item() <= 0.1 + 1e-5
+
+
+def test_envelope_projection_evades_detected_samples(defender_setup):
+    model = defender_setup["model"]
+    x = defender_setup["x_detected"]
+    theta = defender_setup["theta"]
+
+    x_adv = envelope_projection(
+        x, defender_setup["norm_min"], defender_setup["norm_max"]
+    )
+    with torch.no_grad():
+        rmse = model(x_adv)
+
+    assert x_adv.shape == x.shape
+    assert float((rmse <= theta).float().mean()) >= 0.9
+
+
+def test_wgan_best_of_k_never_worse_than_single_draw(defender_setup):
+    device = defender_setup["device"]
+    x = defender_setup["x_detected"][:16]
+    model = defender_setup["model"]
+    theta = defender_setup["theta"]
+    generator = PolymorphicGenerator(
+        feature_dim=100, latent_dim=32, max_eps=2.0, mode="additive"
+    ).to(device)
+    generator.eval()
+
+    # Use the same initial RNG state so the first best-of-k draw is identical
+    # to the single draw; the invariant is that best-of-k can only improve it.
+    torch.manual_seed(123)
+    with torch.no_grad():
+        single = generator.mutate_raw(
+            x,
+            defender_setup["norm_min"],
+            defender_setup["scales"],
+            eps=2.0,
+            mode="additive",
+        )
+        single_rmse = model(single)
+
+    torch.manual_seed(123)
+    _, best_rmse, attempts = wgan_best_of_k(
+        generator,
+        model,
+        x,
+        theta,
+        defender_setup["norm_min"],
+        defender_setup["scales"],
+        eps=2.0,
+        mode="additive",
+        max_retries=3,
+    )
+
+    assert torch.all(best_rmse <= single_rmse + 1e-6)
+    assert int(attempts.min()) >= 1
+    assert int(attempts.max()) <= 3
+
+
+def test_wgan_refine_never_worse_than_input(defender_setup):
+    model = defender_setup["model"]
+    x = defender_setup["x_detected"][:16]
+    generator = PolymorphicGenerator(
+        feature_dim=100, latent_dim=32, max_eps=2.0, mode="additive"
+    ).to(defender_setup["device"])
+    generator.eval()
+    with torch.no_grad():
+        initial = model(x)
+
+    _, best_rmse, attempts = wgan_refine(
+        generator,
+        model,
+        x,
+        defender_setup["theta"],
+        defender_setup["norm_min"],
+        defender_setup["scales"],
+        eps=2.0,
+        steps=3,
+    )
+    assert torch.all(best_rmse <= initial + 1e-6)
+    assert int(attempts.max()) <= 3
 
 
 def test_wgan_discriminator_and_gradient_penalty(defender_setup):

@@ -53,7 +53,7 @@ This document provides a high-level executive summary of the repository architec
 
 ## 3. Configuration Profiles
 - **`configs/kitsune_config.yaml`**: Standardizes `feature_dim: 100`, `max_ae: 10`, `fm_grace: 5000`, `ad_grace: 50000`, and `threshold_percentile: 99.9`.
-- **`configs/wgan_config.yaml`**: Standardizes latent noise dimension (32), critic iterations ($n_{\text{critic}}=5$), gradient penalty weight ($\lambda_{GP}=10.0$), and relative perturbation boundaries ($\epsilon_{L_\infty}=0.05, \delta_{L_2}=1.0$).
+- **`configs/wgan_config.yaml`**: Standardizes latent noise dimension (32), critic iterations ($n_{\text{critic}}=5$), gradient penalty weight ($\lambda_{GP}=10.0$), and relative perturbation boundaries ($\epsilon_{L_\infty}=2.0$ after Phase 6, $\delta_{L_2}=1.0$).
 
 ---
 

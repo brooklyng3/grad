@@ -6,8 +6,13 @@ Operates in normalized feature space:
 
 Supports two generation modes:
   1. 'additive': Bounded box perturbation delta_norm within [-eps, +eps].
-  2. 'manifold': Manifold-shaping / target-envelope mode that dynamically
-     attenuates extreme volumetric features down into the benign window [0, 1].
+     This is the only mode with a genuine eps-budget; it is the learned attack.
+  2. 'manifold': Unbudgeted learned-target mode.  The generator predicts a
+     perturbation scaled by max(|x|, eps) with **no post-hoc clamp**.  The
+     network must learn the target magnitude itself; an untrained network
+     therefore fails (0% ASR) and only the trained network reaches the benign
+     envelope.  A clamp-only baseline remains in the benchmark to separate the
+     learned contribution from pure projection.
 """
 
 from typing import List, Optional
@@ -89,11 +94,14 @@ class PolymorphicGenerator(nn.Module):
         delta_raw = self.network(cond_input)
 
         if active_mode == "manifold":
-            # Manifold shaping: dynamically scale perturbation with feature magnitude
-            # so extreme volumetric rates (> 1.0) can be attenuated into benign [0, 1]
-            dynamic_budget = torch.clamp(x_mal_norm, min=budget)
+            # Unbudgeted learned-target mode: scale the perturbation by the
+            # feature magnitude (or eps for small features) and DO NOT clamp.
+            # The trained MLP must learn the negative step needed to land each
+            # feature inside the benign envelope; an untrained MLP stays near
+            # the original attack value and fails.
+            dynamic_budget = torch.clamp(x_mal_norm.abs(), min=budget)
             delta_norm = delta_raw * dynamic_budget
-            x_adv_norm = torch.clamp(x_mal_norm + delta_norm, min=0.0, max=1.0)
+            x_adv_norm = x_mal_norm + delta_norm
         else:
             # Additive box perturbation: [-budget, +budget]
             delta_norm = delta_raw * budget
