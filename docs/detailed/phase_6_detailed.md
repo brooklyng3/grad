@@ -228,21 +228,21 @@ Selection holdout: 1,000 | untouched test holdout: 1,000 (disjoint halves)
 Epoch [01] | Loss C: -8.3121 | Loss G: 321.3015 | Batch ASR: 0.04% | Holdout ASR: 0.00%
 Epoch [05] | Loss C: -37.2324 | Loss G: 324.6055 | Batch ASR: 0.24% | Holdout ASR: 0.10%
 Epoch [10] | Loss C: -77.4663 | Loss G: 344.2202 | Batch ASR: 0.26% | Holdout ASR: 0.10%
-Best selection ASR 0.10% at epoch 8. Untouched test: 0.00%, RMSE 13.1033.
+Best selection ASR 0.10% at epoch 8. Untouched test: 0.20%, RMSE 13.0958.
 ```
 
 Manifold, ε = 2.0, 10 epochs:
 
 ```text
-Epoch [01] | Loss C: -6.3421 | Loss G: 133.9979 | Batch ASR: 11.56% | Holdout ASR: 54.70%
+Epoch [01] | Loss C: -6.3421 | Loss G: 133.9979 | Batch ASR: 11.56% | Holdout ASR: 55.10%
 Epoch [05] | Loss C: -0.6948 | Loss G: -3.0472 | Batch ASR: 99.99% | Holdout ASR: 100.00%
-Epoch [10] | Loss C: -0.5699 | Loss G: -3.5101 | Batch ASR: 99.97% | Holdout ASR: 100.00%
-Best selection ASR 100.00% at epoch 8. Untouched test: 100.00%, RMSE 0.0397.
+Epoch [10] | Loss C: -0.5699 | Loss G: -3.5101 | Batch ASR: 99.97% | Holdout ASR: 99.90%
+Best selection ASR 100.00% at epoch 6. Untouched test: 100.00%, RMSE 0.0487.
 ```
 
 The additive critic loss magnitude grows to -77; performance plateaus at 0.10%
 selection ASR and 0.00% on the untouched test half. The manifold generator
-learns quickly (54.7% selection ASR after one epoch) and saturates by epoch 5.
+learns quickly (55.1% selection ASR after one epoch) and saturates by epoch 5.
 The pool print now reports the actual post-detection 5,000/5,000 composition,
 and the final score is measured on a half never used for model selection.
 
@@ -385,13 +385,34 @@ Pure Python remains the default because the committed features and model were
 produced with it; the opt-in makes the extension usable without changing
 reproducibility.
 
-Import check:
+### 8.3 Numerical defect and fix (round 3)
 
-```text
->>> import AfterImage_extrapolate
->>> [n for n in dir(af) if 'incStat' in n]
-['incStat', 'incStatDB', 'incStat_cov']
+The round-3 review found the opt-in produced `NaN` scores and divergent
+features. Two defects existed in `incStat_cov.update_cov` / `incStat.radius`:
+
+```diff
+-        self.ex1.insert(t,v)
+-        v_other = self.ex2.predict(t)
+-        self.CF3 += (v - self.incS1.mean()) * (v_other - self.incS2.mean())
++        self.incS2.processDecay(t)
++        self.processDecay(t, inc)
++        res = v - self.incS1.mean()
++        self.CF3 += res * self.lastRes1
++        self.lastRes0 = res
 ```
+
+```diff
+-        A = self.var()
+-        A += incSc.var()
++        A = math.pow(self.var(), 2)
++        A += math.pow(incSc.var(), 2)
+```
+
+The residual-product logic now matches `AfterImage.py`, and `radius` squares
+variances as the pure implementation does. After rebuilding, 300 packets at
+offset 0 and 100 packets after a 10,000-packet warm-up are **bit-identical**
+(max absolute difference 0.0). `tests/test_extractor_parity.py` asserts
+`< 1e-6` and finite output over 200 packets from offset 0.
 
 ---
 
@@ -411,7 +432,7 @@ Suite result:
 
 ```text
 ..........................                                               [100%]
-36 passed in 23.50s
+37 passed in 64.42s
 ```
 
 Formatting/lint:
@@ -474,10 +495,10 @@ Manifold Shaping (50 steps) ASR= 100.0 ER= 100.0
 | PGD box ε=2 | 1.00 | 4.1601 | 2.30% | 13.88% | 1.9983 |
 | DeepFool ε≤2 | 1.00 | 4.5108 | 0.00% | 11.85% | 1.9683 |
 | PGD manifold | 1.00 | 0.0909 | 100.00% | 100.00% | 13.0325 |
-| WGAN box, 1 draw | 1.00 | 4.1925 | 1.60% | 13.52% | 1.9981 |
-| WGAN box, best-of-10 | 9.85 | 4.1883 | 1.60% | 13.52% | 1.9983 |
-| WGAN box, 10-step refine | 9.68 | 1.5275 | 3.80% | 15.29% | 10.4344 |
-| WGAN manifold, trained | 1.00 | 0.0647 | 100.00% | 100.00% | 13.9198 |
+| WGAN box, 1 draw | 1.00 | 4.1925 | 1.60% | 13.43% | 1.9981 |
+| WGAN box, best-of-10 | 9.85 | 4.1883 | 1.60% | 13.43% | 1.9983 |
+| WGAN box, 10-step refine | 9.68 | 1.5275 | 3.80% | 15.20% | 10.4344 |
+| WGAN manifold, trained | 1.00 | 0.0779 | 100.00% | 100.00% | 13.8967 |
 | WGAN manifold, untrained | 1.00 | 5.6284 | 0.00% | 11.85% | 6.1065 |
 
 ### Phase B — volumetric flood, 1,000 detected holdout packets
@@ -492,9 +513,9 @@ Manifold Shaping (50 steps) ASR= 100.0 ER= 100.0
 | DeepFool ε≤2 | 1.00 | 12.9098 | 0.00% | 11.85% | 2.0000 |
 | PGD manifold | 1.00 | 0.0896 | 100.00% | 100.00% | 34.9754 |
 | WGAN box, 1 draw | 1.00 | 12.2900 | 0.00% | 11.85% | 1.9998 |
-| WGAN box, best-of-10 | 10.00 | 12.2890 | 0.00% | 11.85% | 1.9998 |
+| WGAN box, best-of-10 | 10.00 | 12.2893 | 0.00% | 11.85% | 1.9998 |
 | WGAN box, 10-step refine | 10.00 | 5.1945 | 0.00% | 11.85% | 19.7303 |
-| WGAN manifold, trained | 1.00 | 0.0391 | 100.00% | 100.00% | 35.3428 |
+| WGAN manifold, trained | 1.00 | 0.0475 | 100.00% | 100.00% | 35.3521 |
 | WGAN manifold, untrained | 1.00 | 15.0501 | 0.00% | 11.85% | 15.8726 |
 
 ### Clean detection (validation split)
@@ -512,7 +533,7 @@ Benign kNN baseline (normalised L2): 0.1383
 
 1. **Removing the post-hoc clamp reverses the attribution.** The untrained
    generator now scores 0% and RMSE 5.63/15.05, while the trained generator
-   reaches 99.9–100% and RMSE 0.078/0.037. The trained generator **beats the
+   reaches 99.9–100% and RMSE 0.0779/0.0475. The trained generator **beats the
    clamp** (0.114/0.109). This answers the reviewer's central objection: the
    learned network, not the projection, is doing the work.
 2. **Realism moves in the right direction but is not solved.** Mean nearest-
@@ -562,6 +583,8 @@ New:
 - `src/utils/seed.py`
 - `tests/test_cli.py`
 - `tests/test_kitnet.py`
+- `tests/test_extractor_parity.py`
+- `docs/review_images/15.png`–`18.png`
 - `requirements.txt`
 - `README.md`
 - `docs/review_findings.md`
@@ -596,7 +619,7 @@ Modified:
 
 ---
 
-## 15. Second review round (`img/15.png`–`17.png`)
+## 15. Second review round (`docs/review_images/15.png`–`17.png`)
 
 A second review round raised two substantive concerns:
 
@@ -657,10 +680,10 @@ epoch 8). The untrained control uses seed 999 and the same forward.
 |---|---|---:|---:|---:|
 | A | Clamp | 100% | 0.1136 | 0.9096 |
 | A | Manifold, untrained | 0.00% | 5.6284 | 32.2566 |
-| A | Manifold, trained | 100.00% | **0.0647** | **0.6739** |
+| A | Manifold, trained | 100.00% | **0.0779** | **0.7661** |
 | B | Clamp | 100% | 0.1092 | 0.8739 |
 | B | Manifold, untrained | 0.00% | 15.0501 | 83.0818 |
-| B | Manifold, trained | 100% | **0.0391** | **0.6161** |
+| B | Manifold, trained | 100% | **0.0475** | **0.6724** |
 
 The trained generator now beats the clamp on both RMSE (1.5× scan, 3× flood)
 and benign proximity, while the untrained generator fails completely. This
@@ -748,7 +771,7 @@ capabilities now verified in the executable file:
 
 ```text
 python run_pipeline.py --help                     all Phase 6 flags present
-pytest -q                                          36 passed
+pytest -q                                          37 passed
 flake8 src tests run_pipeline.py scripts           exit 0
 black --check src tests run_pipeline.py scripts    clean
 evaluate_all --samples 1000 --seed 42              initial RMSE 5.3381;
@@ -759,3 +782,73 @@ train_wgan --epochs 1 --checkpoint_dir /tmp        mode-specific files only
 ```
 
 The committed Phase A report is again reproducible from the delivered CLI.
+
+---
+
+## 17. Round-3 review remediation (`final_review_findings_v2.md`)
+
+The round-3 review found no critical/high defects. Medium/low findings and the
+changes made:
+
+### 17.1 Cython parity (F1)
+
+`AfterImage_extrapolate.pyx::incStat_cov.update_cov` used an unbounded Lagrange
+extrapolator and `incStat.radius` summed variances instead of squared
+variances. Both were replaced with the pure-Python residual-product algorithm.
+After rebuilding:
+
+```text
+offset 0, 300 packets        max abs diff 0.0
+offset 10,000, 100 packets   max abs diff 0.0
+```
+
+`tests/test_extractor_parity.py` runs 200 packets under each implementation and
+asserts `< 1e-6` and finite output.
+
+### 17.2 Fully untouched benchmark split (F2)
+
+`data_splits.py` now assigns the previously unused `%3 == 2` partition to
+checkpoint selection/test. Published evaluation uses `%3 == 1` only. Both
+generators were retrained; Phase A overlap with selection is now 0.
+
+### 17.3 Documentation and reporting (F3, F10)
+
+- ER columns reflect the current report: 13.26/11.85 single draw, 13.43/11.85
+  best-of-k, 15.20/11.85 refine.
+- Trained manifold values are 0.0779/0.0475 RMSE.
+- Test count is 36 (37 with the parity test).
+- Phase 3's "necessity" claim is qualified.
+- Header is `ER (this regime, extrap.) (%)`; docs state it is phase-specific.
+
+### 17.4 Parameter-driven labels and guards (F4, F5)
+
+`--pgd_eps` was added and PGD alpha is `pgd_eps / 40`. PGD and DeepFool row
+labels use the runtime values. All count arguments clamp to at least 1, with a
+`--samples 0 --batch_size 0` regression test.
+
+### 17.5 Paths and artifacts (F6, F7)
+
+`--labels_path` was added and threaded through sampling, clean evaluation and
+the feedback loop; `--features_path` now reaches training. `threshold_config.yaml`
+and `*.meta.json` are unignored and committed. README states that the model and
+`.pt` checkpoints must be regenerated.
+
+### 17.6 Layout, references, dead code (F8, F9)
+
+AGENTS and the plan now list real modules; pickle wording is corrected; the
+absent PDF link was replaced; screenshots 15–18 were copied to
+`docs/review_images/`. The duplicate kNN block, unused
+`evaluate_perturbation_sweep`, unused `aggregate_tradeoff_curve` and test, and
+unused `kitsune_config` keys were removed.
+
+### 17.7 Verification
+
+```text
+pytest -q                                    37 passed
+flake8 src tests run_pipeline.py scripts     exit 0
+black --check ...                            clean
+evaluate_all / clean / pgd / fgsm            all artifacts regenerated
+```
+
+The only accepted limitation retained is that TTL is not present in AfterImage
+and therefore remains documented rather than enforced.

@@ -100,7 +100,7 @@ Where:
 - `test_evaluator_score_batches`: Validates GPU batching and non-negative RMSE outputs.
 - `test_evaluator_evasion_metrics`: Confirms distance norm calculations ($L_0, L_1, L_2, L_\infty$) and metric isolation.
 - `test_feedback_loop_initialization`: Validates parameter parsing and CUDA device binding.
-- **Full Suite Status:** 17 / 17 tests passing at the time; 36 / 36 after Phase 6.
+- **Full Suite Status:** 17 / 17 tests passing at the time; 37 / 37 after Phase 6.
 
 ---
 
@@ -121,5 +121,5 @@ selected by held-out ASR; training and evaluation both used ε = 2.0.
 The budgeted WGAN is therefore no longer non-functional, but it remains far
 weaker than the unbudgeted manifold attack (100%). After removing the post-hoc
 clamp (second review round), the **trained** manifold generator beats the naive
-clamp on RMSE (0.078 vs 0.114 scanning; 0.037 vs 0.109 flood), while the
+clamp on RMSE (0.0779 vs 0.114 scanning; 0.0475 vs 0.109 flood), while the
 untrained generator scores 0%. See `phase_6_detailed.md` section 15.

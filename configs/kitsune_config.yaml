@@ -14,6 +14,3 @@ data:
   processed_features: "data/processed/mirai_features.npy"
   model_weights: "data/processed/kitsune_mirai_model.pkl"
   packet_limit: null
-
-device: "cuda"
-batch_size: 128

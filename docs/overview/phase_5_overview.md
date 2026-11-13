@@ -39,7 +39,7 @@ This document provides an executive summary of the unified end-to-end evaluation
 
 3. **Rigorous Test Suite:**
    - Added `tests/test_metrics.py` (6 tests) and verified subsample extrapolation in `tests/test_pipeline.py`.
-   - **All 36 unit tests passing** across the complete project test suite (22 at the time of Phase 5; the Phase 6 additions assert evasion behaviour).
+   - **All 37 unit tests passing** across the complete project test suite (22 at the time of Phase 5; the Phase 6 additions assert evasion behaviour).
    - 100% compliant with `black` formatting and `flake8` linting standards.
 
 ---
@@ -59,10 +59,10 @@ Evaluated across two disjoint attack holdout regimes on $1,000$ confirmed detect
 | **Multi-Step PGD (Box)** | 50 steps, $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1601$ | $2.30\%$ | $13.88\%$ | $1.9983$ | $2321.2\text{ ms}$ |
 | **DeepFool (bounded)** | 50 iters, $\epsilon \le 2.0 \cdot \mathbf{s}$ | 1.00 | $4.5108$ | $0.00\%$ | $11.85\%$ | $1.9683$ | $2387.1\text{ ms}$ |
 | **Multi-Step PGD (Manifold)** | Unbudgeted $[\min,\max]$, 50 steps | 1.00 | **$0.0909$** | **$100.00\%$** | **$100.00\%$** | $13.0325$ | $2170.6\text{ ms}$ |
-| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1925$ | $1.60\%$ | $13.52\%$ | $1.9981$ | $19.2\text{ ms}$ |
-| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 9.85 | $4.1883$ | $1.60\%$ | $13.52\%$ | $1.9983$ | $153.5\text{ ms}$ |
-| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 9.68 | $1.5275$ | $3.80\%$ | $15.29\%$ | $10.4344$ | $148.7\text{ ms}$ |
-| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0647$** | **$100.00\%$** | **$100.00\%$** | $13.9198$ | $7.6\text{ ms}$ |
+| **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $4.1925$ | $1.60\%$ | $13.43\%$ | $1.9981$ | $19.2\text{ ms}$ |
+| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 9.85 | $4.1883$ | $1.60\%$ | $13.43\%$ | $1.9983$ | $153.5\text{ ms}$ |
+| **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 9.68 | $1.5275$ | $3.80\%$ | $15.20\%$ | $10.4344$ | $148.7\text{ ms}$ |
+| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0779$** | **$100.00\%$** | **$100.00\%$** | $13.8967$ | $7.6\text{ ms}$ |
 | **WGAN-GP (Manifold, untrained)** | Same forward, random weights | 1.00 | $5.6284$ | $0.00\%$ | $11.85\%$ | $6.1065$ | $3.0\text{ ms}$ |
 
 ---
@@ -79,9 +79,9 @@ Evaluated across two disjoint attack holdout regimes on $1,000$ confirmed detect
 | **DeepFool (bounded)** | 50 iters, $\epsilon \le 2.0 \cdot \mathbf{s}$ | 1.00 | $12.9098$ | $0.00\%$ | $11.85\%$ | $2.0000$ | $2135.0\text{ ms}$ |
 | **Multi-Step PGD (Manifold)** | Unbudgeted $[\min,\max]$, 50 steps | 1.00 | **$0.0896$** | **$100.00\%$** | **$100.00\%$** | $34.9754$ | $1668.1\text{ ms}$ |
 | **WGAN-GP (Box, 1 draw)** | $\epsilon = 2.0 \cdot \mathbf{s}$ | 1.00 | $12.2900$ | $0.00\%$ | $11.85\%$ | $1.9998$ | $1.9\text{ ms}$ |
-| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 10.00 | $12.2890$ | $0.00\%$ | $11.85\%$ | $1.9998$ | $149.7\text{ ms}$ |
+| **WGAN-GP (Box, best-of-10)** | $\epsilon = 2.0 \cdot \mathbf{s}$, retry | 10.00 | $12.2893$ | $0.00\%$ | $11.85\%$ | $1.9998$ | $149.7\text{ ms}$ |
 | **WGAN-GP (Box, 10-step refine)** | $\epsilon$ per step, aggregate | 10.00 | $5.1945$ | $0.00\%$ | $11.85\%$ | $19.7303$ | $195.4\text{ ms}$ |
-| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0391$** | **$100.00\%$** | **$100.00\%$** | $35.3428$ | $1.8\text{ ms}$ |
+| **WGAN-GP (Manifold, trained)** | Unbudgeted learned target | 1.00 | **$0.0475$** | **$100.00\%$** | **$100.00\%$** | $35.3521$ | $1.8\text{ ms}$ |
 | **WGAN-GP (Manifold, untrained)** | Same forward, random weights | 1.00 | $15.0501$ | $0.00\%$ | $11.85\%$ | $15.8726$ | $5.0\text{ ms}$ |
 
 ### Baseline Clean Detection Metrics (86,853 Packets Scored)
@@ -101,7 +101,7 @@ Evaluated across two disjoint attack holdout regimes on $1,000$ confirmed detect
    In volumetric DoS attacks like Mirai, packet rates and byte counts reach $15\times$ to $35\times$ the maximum benign baseline. Because autoencoders unnormalize inputs with $\mathbf{s} = \mathbf{norm\_max} - \mathbf{norm\_min}$ and process them through bounded $\text{sigmoid}$ activation functions ($\sigma(z) \in (0, 1)$), extreme inputs push neurons into deep saturation. In this regime, gradients vanish ($\sigma'(z) \approx 0$). Bounded additive perturbations ($\epsilon \le 2.0$) can slightly attenuate moderate scanning attacks ($7.20\%$ ASR) but cannot bridge the volumetric flooding gap ($0.00\%$ ASR).
 
 2. **Single-Pass Generation Beats Iteration; the Trained Generator Now Earns It:**
-   While 50-step PGD (Manifold) achieves 100.00% evasion, it requires $1,668$–$2,199\text{ ms}$ per 1,000 packets because it performs 50 forward and backward autograd passes. A single generator pass takes $7.6\text{ ms}$. More importantly, removing the post-hoc clamp makes the learning meaningful: the untrained manifold generator scores 0% (RMSE 5.63–15.05), while the trained generator reaches 99.9–100% at **lower** RMSE than the naive clamp (0.078 vs 0.114 scanning; 0.037 vs 0.109 flood) and closer benign-neighbour distance (0.67/0.62 vs 0.91/0.87; benign baseline 0.14). The GAN is not essential for the result, but it now improves on the trivial projection.
+   While 50-step PGD (Manifold) achieves 100.00% evasion, it requires $1,668$–$2,199\text{ ms}$ per 1,000 packets because it performs 50 forward and backward autograd passes. A single generator pass takes $7.6\text{ ms}$. More importantly, removing the post-hoc clamp makes the learning meaningful: the untrained manifold generator scores 0% (RMSE 5.63–15.05), while the trained generator reaches 99.9–100% at **lower** RMSE than the naive clamp (0.0779 vs 0.114 scanning; 0.0475 vs 0.109 flood) and closer benign-neighbour distance (0.67/0.62 vs 0.91/0.87; benign baseline 0.14). The GAN is not essential for the result, but it now improves on the trivial projection.
 
 3. **Budgeted Attacks Remain Weak:** At the genuine $\epsilon = 2.0$ box, PGD reaches 2.30% on scanning and 0.00% on flood; the WGAN reaches 1.60% and 0.00%. A best-of-10 retry loop does not change ASR because output variance is near zero. Ten feedback-refinement steps raise scanning to 3.80% and cut flood RMSE to 5.19, but aggregate L∞ reaches 10.4/19.7. The 100% figures require the unbudgeted manifold attack and should not be read as an $\epsilon = 2$ result.
 

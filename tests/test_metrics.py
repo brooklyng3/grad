@@ -10,7 +10,6 @@ import pytest
 from src.utils.metrics import (
     compute_detection_metrics,
     compute_roc_auc,
-    aggregate_tradeoff_curve,
     format_markdown_table,
     export_metrics_json,
     export_metrics_csv,
@@ -49,44 +48,6 @@ def test_compute_roc_auc():
     auc_val, fpr, tpr, thresholds = compute_roc_auc(y_true, scores)
     assert pytest.approx(auc_val, 1e-4) == 1.0
     assert len(fpr) == len(tpr) == len(thresholds)
-
-
-def test_aggregate_tradeoff_curve():
-    dummy_results = [
-        {
-            "param_name": "epsilon",
-            "param_value": 0.5,
-            "attack_type": "FGSM",
-            "conditional_asr_pct": 10.0,
-            "overall_evasion_rate_pct": 20.0,
-            "rmse_metrics": {"adversarial_mean": 1.2},
-            "perturbation_distances": {
-                "mean_linf": 0.5,
-                "mean_l2": 2.1,
-                "mean_l0_modified_features": 80.0,
-            },
-        },
-        {
-            "param_name": "epsilon",
-            "param_value": 0.1,
-            "attack_type": "FGSM",
-            "conditional_asr_pct": 2.0,
-            "overall_evasion_rate_pct": 13.0,
-            "rmse_metrics": {"adversarial_mean": 2.0},
-            "perturbation_distances": {
-                "mean_linf": 0.1,
-                "mean_l2": 0.5,
-                "mean_l0_modified_features": 75.0,
-            },
-        },
-    ]
-
-    tradeoff = aggregate_tradeoff_curve(dummy_results)
-    assert len(tradeoff) == 2
-    # Should be sorted by param_value ascending
-    assert tradeoff[0]["param_value"] == 0.1
-    assert tradeoff[1]["param_value"] == 0.5
-    assert tradeoff[0]["conditional_asr_pct"] == 2.0
 
 
 def test_format_markdown_table():

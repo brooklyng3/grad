@@ -21,7 +21,7 @@ This document provides a high-level executive summary of the closed-loop adversa
    - Maintained VRAM strictly $< 1.8$ GB (well under the 4 GB limit) with periodic cache flushes (`torch.cuda.empty_cache()`).
 4. **Testing & QA Verification:**
    - Implemented `tests/test_pipeline.py`.
-   - **All 17 project tests passing at the time; 36 / 36 after Phase 6**, with Black and Flake8 clean.
+   - **All 17 project tests passing at the time; 37 / 37 after Phase 6**, with Black and Flake8 clean.
 
 ---
 
@@ -33,7 +33,7 @@ This document provides a high-level executive summary of the closed-loop adversa
 > fixes (shared persisted ε, disjoint stratified split, holdout selection,
 > `n_critic`), the budgeted WGAN reaches 1.60% on the scanning holdout and 0.00%
 > on flood, with 0.10% on the all-regime holdout. After removing the post-hoc
-> clamp, the trained manifold generator reaches 99.9–100% at RMSE 0.078/0.037,
+> clamp, the trained manifold generator reaches 99.9–100% at RMSE 0.0779/0.0475,
 > beating the naive clamp (0.114/0.109), while the untrained generator scores
 > 0%. Full log: `phase_6_detailed.md`.
 

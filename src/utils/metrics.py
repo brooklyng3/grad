@@ -86,42 +86,6 @@ def compute_roc_auc(
     return roc_auc_val, fpr, tpr, thresholds
 
 
-def aggregate_tradeoff_curve(
-    sweep_results: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """Aggregates evaluation results into a sorted distortion vs evasion trade-off list.
-
-    Args:
-        sweep_results: List of dictionaries from PipelineEvaluator.evaluate_evasion,
-                       each augmented with experimental parameters
-                       (e.g. 'param_name', 'param_value').
-
-    Returns:
-        Sorted list summarizing parameter, Linf, L2, ASR_cond, and ER_total.
-    """
-    tradeoff = []
-    for item in sweep_results:
-        summary = {
-            "param_name": item.get("param_name", "epsilon"),
-            "param_value": item.get("param_value", 0.0),
-            "attack_type": item.get("attack_type", "Unknown"),
-            "conditional_asr_pct": item.get("conditional_asr_pct", 0.0),
-            "overall_evasion_rate_pct": item.get("overall_evasion_rate_pct", 0.0),
-            "adversarial_mean_rmse": item.get("rmse_metrics", {}).get(
-                "adversarial_mean", 0.0
-            ),
-            "mean_linf": item.get("perturbation_distances", {}).get("mean_linf", 0.0),
-            "mean_l2": item.get("perturbation_distances", {}).get("mean_l2", 0.0),
-            "mean_l0": item.get("perturbation_distances", {}).get(
-                "mean_l0_modified_features", 0.0
-            ),
-        }
-        tradeoff.append(summary)
-
-    tradeoff.sort(key=lambda x: (x["param_value"]))
-    return tradeoff
-
-
 def format_markdown_table(
     headers: List[str],
     rows: List[List[Any]],

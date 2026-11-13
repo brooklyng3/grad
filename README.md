@@ -57,7 +57,8 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 The pure-Python AfterImage extractor is the default. Set
 `KITSUNE_USE_CYTHON=1` to use the compiled `AfterImage_extrapolate` extension;
-if it is missing it is built on import.
+if it is missing it is built on import. It is parity-tested against the pure
+extractor (`tests/test_extractor_parity.py`) and yields identical features.
 
 ## Data preparation
 
@@ -72,6 +73,10 @@ python src/defender/eval_threshold.py      # calibrates theta on a benign split
 
 The extraction script writes `data/processed/mirai_features.npy` and
 `data/processed/kitsune_mirai_model.pkl`.
+
+`threshold_config.yaml` and generator `*.meta.json` are committed. The model
+pickle and `.pt` checkpoints are not; regenerate them with the extraction and
+training commands above (about 30 minutes plus training).
 
 ## Reproduce the benchmark
 
@@ -117,4 +122,5 @@ black --check src tests run_pipeline.py scripts
 - `docs/detailed/phase_0_detailed.md` … `phase_5_detailed.md` — per-phase logs
 - `docs/detailed/phase_6_detailed.md` — review remediation log
 - `docs/review_findings.md` — the first independent review
-- `docs/final_review_findings.md` — the final review and remediation record
+- `docs/final_review_findings.md` — round-2 review and remediation
+- `docs/final_review_findings_v2.md` — round-3 review and remediation

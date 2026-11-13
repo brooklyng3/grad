@@ -105,6 +105,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to memory-mapped features .npy file.",
     )
     parser.add_argument(
+        "--labels_path",
+        type=str,
+        default="data/raw/mirai_labels.csv",
+        help="Path to the binary ground-truth label file.",
+    )
+    parser.add_argument(
         "--model_path",
         type=str,
         default="data/processed/kitsune_mirai_model.pkl",
@@ -158,6 +164,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         help="Generator feedback-refinement steps for the box WGAN row.",
+    )
+    parser.add_argument(
+        "--pgd_eps",
+        type=float,
+        default=float(_pert.get("eps_linf", 2.0)),
+        help="L-inf budget for the PGD box baseline.",
     )
     parser.add_argument(
         "--deepfool_max_eps",
@@ -268,7 +280,7 @@ def load_pipeline_components(
     )
     evaluator.num_pre_evaded = num_pre_evaded
     evaluator.total_attack_population = total_attack_population
-    labels = load_labels()
+    labels = load_labels(args.labels_path)
     validation = benign_indices_for_split(labels, "validation")
     evaluator.set_benign_reference(
         torch.tensor(np.array(feats_mmap[validation[:2000]], dtype=np.float32))
@@ -283,6 +295,7 @@ def get_detected_attack_sample(
     device: torch.device,
     phase: str = "flood",
     return_indices: bool = False,
+    labels_path: str = "data/raw/mirai_labels.csv",
 ) -> Any:
     """Extracts confirmed detected attack packets (RMSE > theta).
 
@@ -297,7 +310,7 @@ def get_detected_attack_sample(
     Returns:
         Selected feature tensor, or (tensor, indices) when ``return_indices``.
     """
-    labels = load_labels()
+    labels = load_labels(labels_path)
     eval_attacks = attack_indices_for_split(np.where(labels == 1)[0], "eval")
 
     if phase == "scanning":
@@ -359,7 +372,7 @@ def run_evaluate_clean(
     print("=" * 70)
 
     # Disjoint benign validation split (calibration used even parity)
-    labels = load_labels()
+    labels = load_labels(args.labels_path)
     if len(labels) != len(feats_mmap):
         raise ValueError("Label and feature lengths do not match")
     benign_indices = benign_indices_for_split(labels, "validation")
@@ -389,10 +402,6 @@ def run_evaluate_clean(
     roc_auc_val, _, _, _ = compute_roc_auc(y_true, all_scores)
     metrics["roc_auc"] = roc_auc_val
     metrics["eval_time_seconds"] = elapsed
-    benign_queries = torch.from_numpy(
-        np.array(feats_mmap[benign_indices[2000:2200]], dtype=np.float32)
-    )
-    metrics["benign_knn_baseline"] = evaluator.benign_knn_distance(benign_queries)
     benign_queries = torch.from_numpy(
         np.array(feats_mmap[benign_indices[2000:2200]], dtype=np.float32)
     )
@@ -509,19 +518,20 @@ def run_pgd_attack(
     print("MODE: Multi-Step PGD & Manifold Traffic-Shaping Benchmarking")
     print("=" * 70)
 
+    eps_20 = args.pgd_eps / 2.0
     configs = [
         {
-            "name": "PGD (Box, 20 steps, eps=1.0)",
+            "name": f"PGD (Box, 20 steps, eps={eps_20:g})",
             "steps": 20,
-            "eps": 1.0,
-            "alpha": 0.05,
+            "eps": eps_20,
+            "alpha": eps_20 / 20.0,
             "manifold": False,
         },
         {
-            "name": "PGD (Box, 50 steps, eps=2.0)",
+            "name": f"PGD (Box, 50 steps, eps={args.pgd_eps:g})",
             "steps": 50,
-            "eps": 2.0,
-            "alpha": 0.05,
+            "eps": args.pgd_eps,
+            "alpha": args.pgd_eps / 40.0,
             "manifold": False,
         },
         {
@@ -612,6 +622,8 @@ def run_train_wgan(
         eps=args.eps,
         threshold_config_path=args.threshold_config,
         model_path=args.model_path,
+        features_path=args.features_path,
+        labels_path=args.labels_path,
         seed=args.seed,
     )
 
@@ -698,6 +710,7 @@ def evaluate_attack_suite(
     retries: int = 10,
     refine_steps: int = 10,
     default_eps: float = 2.0,
+    pgd_eps: float = 2.0,
     deepfool_max_eps: float = 2.0,
     deepfool_steps: int = 50,
     deepfool_step: float = 0.1,
@@ -712,7 +725,7 @@ def evaluate_attack_suite(
         "Draws/pkt",
         "Mean Attack RMSE",
         "Conditional ASR (%)",
-        "Overall Evasion Rate (%)",
+        "ER (this regime, extrap.) (%)",
         "Mean Linf",
         "kNN->benign (norm. L2)",
         "Latency (ms / 1k pkts)",
@@ -792,8 +805,8 @@ def evaluate_attack_suite(
         x=mal_detected,
         theta=evaluator.theta,
         scales=evaluator.scales,
-        eps=2.0,
-        alpha=0.05,
+        eps=pgd_eps,
+        alpha=pgd_eps / 40.0,
         num_steps=50,
         manifold_projection=False,
         norm_min=evaluator.norm_min,
@@ -802,7 +815,7 @@ def evaluate_attack_suite(
     _sync(device)
     add_row(
         "Multi-Step PGD (Box)",
-        "50 steps, eps = 2.0 * s",
+        f"50 steps, eps = {pgd_eps:g} * s",
         x_pgd,
         (time.perf_counter() - t0) * 1000.0,
     )
@@ -822,7 +835,7 @@ def evaluate_attack_suite(
     _sync(device)
     add_row(
         "DeepFool (bounded)",
-        "50 iters, eps <= 2.0 * s",
+        f"{deepfool_steps} iters, eps <= {deepfool_max_eps:g} * s",
         x_deepfool,
         (time.perf_counter() - t0) * 1000.0,
     )
@@ -1006,7 +1019,12 @@ def run_evaluate_all(
 
     for title, phase_key in phases:
         mal_subset = get_detected_attack_sample(
-            feats_mmap, evaluator, args.samples, device, phase=phase_key
+            feats_mmap,
+            evaluator,
+            args.samples,
+            device,
+            phase=phase_key,
+            labels_path=args.labels_path,
         )
         md_table, _ = evaluate_attack_suite(
             title,
@@ -1017,6 +1035,7 @@ def run_evaluate_all(
             retries=args.retries,
             refine_steps=args.refine_steps,
             default_eps=args.eps,
+            pgd_eps=args.pgd_eps,
             deepfool_max_eps=args.deepfool_max_eps,
             deepfool_steps=args.deepfool_steps,
             deepfool_step=args.deepfool_step,
@@ -1035,6 +1054,12 @@ def run_evaluate_all(
 
 def main() -> None:
     args = parse_args()
+    args.samples = max(1, args.samples)
+    args.batch_size = max(1, args.batch_size)
+    args.train_batch_size = max(1, args.train_batch_size)
+    args.retries = max(1, args.retries)
+    args.refine_steps = max(1, args.refine_steps)
+    args.deepfool_steps = max(1, args.deepfool_steps)
     seed_everything(args.seed)
     device = get_device(args.device)
 
@@ -1051,14 +1076,24 @@ def main() -> None:
     elif args.mode == "fgsm_sweep":
         phase = args.attack_phase if args.attack_phase != "both" else "flood"
         mal_detected = get_detected_attack_sample(
-            feats_mmap, evaluator, args.samples, device, phase=phase
+            feats_mmap,
+            evaluator,
+            args.samples,
+            device,
+            phase=phase,
+            labels_path=args.labels_path,
         )
         run_fgsm_sweep(args, torch_model, evaluator, mal_detected)
 
     elif args.mode == "pgd_attack":
         phase = args.attack_phase if args.attack_phase != "both" else "flood"
         mal_detected = get_detected_attack_sample(
-            feats_mmap, evaluator, args.samples, device, phase=phase
+            feats_mmap,
+            evaluator,
+            args.samples,
+            device,
+            phase=phase,
+            labels_path=args.labels_path,
         )
         run_pgd_attack(args, torch_model, evaluator, mal_detected)
 

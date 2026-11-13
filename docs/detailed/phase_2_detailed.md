@@ -116,4 +116,4 @@ attack_metrics:
 ## 6. Verification Test Suite (`tests/test_threshold.py`)
 - `test_threshold_config_metadata`: Confirms disjoint 33,311/33,310 splits, out-of-sample validation FPR $\le 0.5\%$, and detection rate $> 80\%$.
 - `test_torch_kitnet_threshold_decision`: Confirms post-convergence benign sample scores reliably fall below $\theta$.
-- **Full Suite Status:** 36 / 36 tests passing across all project test modules after Phase 6.
+- **Full Suite Status:** 37 / 37 tests passing across all project test modules after Phase 6.

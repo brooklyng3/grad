@@ -15,7 +15,7 @@ All routines enforce domain constraints:
     unsigned >= 0, MTU on packet-size means, IAT >= 0).
 """
 
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Optional, Tuple
 import torch
 import torch.nn as nn
 
@@ -370,52 +370,3 @@ def deepfool_attack(
         final_rmse = model(x_adv)
 
     return x_adv, final_rmse, max_iter
-
-
-def evaluate_perturbation_sweep(
-    model: nn.Module,
-    x_detected: torch.Tensor,
-    theta: float,
-    scales: torch.Tensor,
-    eps_list: list = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
-) -> Dict[float, Dict[str, float]]:
-    """Evaluates FGSM evasion rates across an epsilon budget sweep.
-
-    Computes Conditional ASR on detected attack packets to observe the
-    mathematical transition curve from 0% to ~100% evasion.
-
-    Args:
-        model: PyTorchKitNET model.
-        x_detected: Batch of detected malicious samples (RMSE > theta).
-        theta: Alert threshold.
-        scales: Global dynamic range scale vector.
-        eps_list: List of epsilon fractions to evaluate.
-
-    Returns:
-        Dictionary mapping epsilon -> metrics {conditional_asr, mean_rmse, ...}.
-    """
-    model.eval()
-    results = {}
-    num_samples = x_detected.size(0)
-
-    for eps in eps_list:
-        x_adv, rmse_adv = fgsm_attack(
-            model=model,
-            x=x_detected,
-            eps=eps,
-            scales=scales,
-            target_threshold=theta,
-            enforce_domain=True,
-        )
-        evaded = (rmse_adv <= theta).sum().item()
-        asr = (evaded / num_samples) * 100.0
-
-        results[eps] = {
-            "conditional_asr": asr,
-            "mean_rmse": rmse_adv.mean().item(),
-            "median_rmse": rmse_adv.median().item(),
-            "min_rmse": rmse_adv.min().item(),
-            "max_rmse": rmse_adv.max().item(),
-        }
-
-    return results

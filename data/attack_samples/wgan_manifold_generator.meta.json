@@ -1,0 +1,8 @@
+{
+  "eps": 2.0,
+  "seed": 42,
+  "mode": "manifold",
+  "best_epoch": 6,
+  "best_selection_asr": 100.0,
+  "test_asr": 99.9999999999999
+}

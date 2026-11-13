@@ -1,0 +1,8 @@
+{
+  "eps": 2.0,
+  "seed": 42,
+  "mode": "additive",
+  "best_epoch": 8,
+  "best_selection_asr": 0.1,
+  "test_asr": 0.1999999999999998
+}

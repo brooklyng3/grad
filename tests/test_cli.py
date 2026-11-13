@@ -47,7 +47,9 @@ def test_cli_help_exposes_phase6_flags():
         "--train_epochs",
         "--train_batch_size",
         "--deepfool_max_eps",
+        "--pgd_eps",
         "--refine_steps",
+        "--labels_path",
     ):
         assert flag in out
 
@@ -56,8 +58,13 @@ def test_sampler_uses_only_eval_split():
     _, evaluator, device = _components()
     features = np.load("data/processed/mirai_features.npy", mmap_mode="r")
     labels = run_pipeline.load_labels()
-    train = set(attack_indices_for_split(np.where(labels == 1)[0], "train").tolist())
-    evals = set(attack_indices_for_split(np.where(labels == 1)[0], "eval").tolist())
+    attacks = np.where(labels == 1)[0]
+    train = set(attack_indices_for_split(attacks, "train").tolist())
+    evals = set(attack_indices_for_split(attacks, "eval").tolist())
+    holdout = set(attack_indices_for_split(attacks, "holdout").tolist())
+    assert train.isdisjoint(evals)
+    assert train.isdisjoint(holdout)
+    assert evals.isdisjoint(holdout)
 
     selected, indices = run_pipeline.get_detected_attack_sample(
         features, evaluator, 20, device, phase="scanning", return_indices=True
@@ -65,6 +72,7 @@ def test_sampler_uses_only_eval_split():
     assert selected.size(0) == len(indices)
     assert all(int(i) in evals for i in indices)
     assert all(int(i) not in train for i in indices)
+    assert all(int(i) not in holdout for i in indices)
 
 
 def test_metadata_round_trip(tmp_path):
@@ -109,6 +117,29 @@ def test_clean_eval_uses_validation_split_only(tmp_path):
     calibration = set(benign_indices_for_split(labels, "calibration").tolist())
     assert validation.size == 33310
     assert not calibration.intersection(set(validation.tolist()))
+
+
+def test_zero_sample_and_batch_are_clamped(tmp_path):
+    subprocess.run(
+        [
+            sys.executable,
+            "run_pipeline.py",
+            "--mode",
+            "fgsm_sweep",
+            "--attack_phase",
+            "scanning",
+            "--samples",
+            "0",
+            "--batch_size",
+            "0",
+            "--output_dir",
+            str(tmp_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": "."},
+    )
 
 
 def test_evaluate_all_emits_full_row_set(tmp_path):

@@ -1,0 +1,25 @@
+threshold: 0.4559856057167053
+percentile: 99.9
+grace_period_excluded: 55000
+benign_calibration:
+  num_evaluated: 33311
+  mean_rmse: 0.015202509239315987
+  std_rmse: 0.052497707307338715
+  min_rmse: 0.0023962093982845545
+  max_rmse: 6.930492401123047
+benign_validation:
+  num_evaluated: 33310
+  mean_rmse: 0.014967084862291813
+  std_rmse: 0.034596238285303116
+  false_positive_count: 32
+  false_positive_rate_pct: 0.09606724707295107
+attack_metrics:
+  num_evaluated: 642516
+  detected_count: 566393
+  evaded_count: 76123
+  detection_rate_pct: 88.15235729538253
+  evasion_rate_pct: 11.847642704617472
+  mean_rmse: 17.028671264648438
+  std_rmse: 423.01239013671875
+  min_rmse: 0.001764054992236197
+  max_rmse: 99328.125

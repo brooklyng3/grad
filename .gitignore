@@ -38,3 +38,13 @@ env/
 # Screenshots and prompt images
 img/
 *:Zone.Identifier
+
+# Small reproducibility artifacts
+!data/
+data/raw/*
+data/processed/*
+data/attack_samples/*
+!data/processed/
+!data/processed/threshold_config.yaml
+!data/attack_samples/
+!data/attack_samples/*.meta.json

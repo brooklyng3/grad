@@ -1,49 +1,49 @@
 {
   "eval_summary": {
     "num_detected_evaluated": 1000,
-    "num_successfully_evaded": 0,
-    "conditional_asr_pct": 0.0,
-    "overall_evasion_rate_pct": 11.847642704617472,
+    "num_successfully_evaded": 2,
+    "conditional_asr_pct": 0.1999999999999998,
+    "overall_evasion_rate_pct": 12.023947419208236,
     "rmse_metrics": {
-      "initial_mean": 14.281322479248047,
-      "initial_median": 14.331259727478027,
-      "adversarial_mean": 13.103283882141113,
-      "adversarial_median": 13.137727737426758,
-      "adversarial_min": 9.565438270568848,
-      "adversarial_max": 14.086004257202148
+      "initial_mean": 34.485809326171875,
+      "initial_median": 14.340682983398438,
+      "adversarial_mean": 13.095800399780273,
+      "adversarial_median": 13.144556045532227,
+      "adversarial_min": 0.24976608157157898,
+      "adversarial_max": 14.095001220703125
     },
     "perturbation_distances": {
-      "mean_linf": 1.9997491836547852,
-      "max_linf": 1.9998540878295898,
-      "mean_l2": 9.616578102111816,
-      "max_l2": 9.864592552185059,
-      "mean_l1": 63.326438903808594,
-      "mean_l0_modified_features": 94.91000366210938
+      "mean_linf": 173.34609985351562,
+      "max_linf": 170270.109375,
+      "mean_l2": 188.84046936035156,
+      "max_l2": 178149.0625,
+      "mean_l1": 287.1392517089844,
+      "mean_l0_modified_features": 94.93599700927734
     }
   },
   "test_summary": {
     "num_detected_evaluated": 1000,
-    "num_successfully_evaded": 0,
-    "conditional_asr_pct": 0.0,
-    "overall_evasion_rate_pct": 11.847642704617472,
+    "num_successfully_evaded": 2,
+    "conditional_asr_pct": 0.1999999999999998,
+    "overall_evasion_rate_pct": 12.023947419208236,
     "rmse_metrics": {
-      "initial_mean": 14.281322479248047,
-      "initial_median": 14.331259727478027,
-      "adversarial_mean": 13.103283882141113,
-      "adversarial_median": 13.137727737426758,
-      "adversarial_min": 9.565438270568848,
-      "adversarial_max": 14.086004257202148
+      "initial_mean": 34.485809326171875,
+      "initial_median": 14.340682983398438,
+      "adversarial_mean": 13.095800399780273,
+      "adversarial_median": 13.144556045532227,
+      "adversarial_min": 0.24976608157157898,
+      "adversarial_max": 14.095001220703125
     },
     "perturbation_distances": {
-      "mean_linf": 1.9997491836547852,
-      "max_linf": 1.9998540878295898,
-      "mean_l2": 9.616578102111816,
-      "max_l2": 9.864592552185059,
-      "mean_l1": 63.326438903808594,
-      "mean_l0_modified_features": 94.91000366210938
+      "mean_linf": 173.34609985351562,
+      "max_linf": 170270.109375,
+      "mean_l2": 188.84046936035156,
+      "max_l2": 178149.0625,
+      "mean_l1": 287.1392517089844,
+      "mean_l0_modified_features": 94.93599700927734
     }
   },
-  "test_asr": 0.0,
+  "test_asr": 0.1999999999999998,
   "history": [
     {
       "epoch": 1,
@@ -51,7 +51,7 @@
       "loss_g": 292.2388180463742,
       "batch_asr": 0.02003205128205128,
       "holdout_asr": 0.0,
-      "holdout_mean_rmse": 10.511927604675293
+      "holdout_mean_rmse": 10.509966850280762
     },
     {
       "epoch": 2,
@@ -59,7 +59,7 @@
       "loss_g": 286.20831885704627,
       "batch_asr": 0.07011217948717949,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.432862281799316
+      "holdout_mean_rmse": 10.431015014648438
     },
     {
       "epoch": 3,
@@ -67,7 +67,7 @@
       "loss_g": 288.21175873585236,
       "batch_asr": 0.11017628205128205,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.40518569946289
+      "holdout_mean_rmse": 10.40342903137207
     },
     {
       "epoch": 4,
@@ -75,7 +75,7 @@
       "loss_g": 291.4404007349259,
       "batch_asr": 0.19030448717948717,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.393755912780762
+      "holdout_mean_rmse": 10.392056465148926
     },
     {
       "epoch": 5,
@@ -83,7 +83,7 @@
       "loss_g": 294.8718410394131,
       "batch_asr": 0.23036858974358976,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.396449089050293
+      "holdout_mean_rmse": 10.394826889038086
     },
     {
       "epoch": 6,
@@ -91,7 +91,7 @@
       "loss_g": 298.88780799278845,
       "batch_asr": 0.2203525641025641,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.392960548400879
+      "holdout_mean_rmse": 10.39125919342041
     },
     {
       "epoch": 7,
@@ -99,7 +99,7 @@
       "loss_g": 302.5157681978666,
       "batch_asr": 0.2403846153846154,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.384946823120117
+      "holdout_mean_rmse": 10.383129119873047
     },
     {
       "epoch": 8,
@@ -107,7 +107,7 @@
       "loss_g": 306.32609127729364,
       "batch_asr": 0.2003205128205128,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.382683753967285
+      "holdout_mean_rmse": 10.380887031555176
     },
     {
       "epoch": 9,
@@ -115,7 +115,7 @@
       "loss_g": 310.7815270057091,
       "batch_asr": 0.2403846153846154,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.382753372192383
+      "holdout_mean_rmse": 10.380938529968262
     },
     {
       "epoch": 10,
@@ -123,7 +123,7 @@
       "loss_g": 314.2445889986478,
       "batch_asr": 0.250400641025641,
       "holdout_asr": 0.1,
-      "holdout_mean_rmse": 10.385734558105469
+      "holdout_mean_rmse": 10.38395881652832
     }
   ],
   "best_epoch": 8,

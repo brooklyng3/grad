@@ -148,7 +148,7 @@ python3 setup.py build_ext --inplace
 ---
 
 ## 6. System Tool Integration: Native `tshark`
-In [Note to myself.pdf](file:///home/brooklyng3/projects/grad/Note%20to%20myself.pdf), packet parsing using Scapy took $10+$ hours on large captures. Wireshark's compiled C dissector `tshark` was installed via:
+In earlier notes, packet parsing using Scapy took $10+$ hours on large captures (the PDF is not committed). Wireshark's compiled C dissector `tshark` was installed via:
 ```bash
 sudo apt update && sudo apt install -y tshark unzip apparmor-utils
 ```

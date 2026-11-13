@@ -15,7 +15,7 @@ This document provides a high-level executive summary of the evaluation methodol
    - **Baseline Evasion Rate:** **$11.85\%$** ($76,123 / 642,516$)
    - **Mean Attack RMSE:** $17.03$ (well above $\theta = 0.453$)
 5. **Persistent Metadata Configuration:** Saved complete statistical distribution metrics and threshold values to `data/processed/threshold_config.yaml`.
-6. **Automated Verification:** Added `tests/test_threshold.py` verifying split sizes, out-of-sample FPR tolerance, and runtime decision sanity (10 / 10 at the time; 36 / 36 after Phase 6).
+6. **Automated Verification:** Added `tests/test_threshold.py` verifying split sizes, out-of-sample FPR tolerance, and runtime decision sanity (10 / 10 at the time; 37 / 37 after Phase 6).
 
 ---
 

@@ -35,10 +35,12 @@ Agents must optimize all data loaders, batching, and training pipelines to execu
 │   ├── raw/
 │   ├── processed/
 │   └── attack_samples/
+├── scripts/
+│   └── extract_and_train.py
 ├── src/
 │   ├── defender/
-│   │   ├── afterimage.py
-│   │   └── kitnet.py
+│   │   ├── torch_kitnet.py
+│   │   └── eval_threshold.py
 │   ├── attacker/
 │   │   ├── generator.py
 │   │   ├── discriminator.py
@@ -48,10 +50,14 @@ Agents must optimize all data loaders, batching, and training pipelines to execu
 │   │   └── feedback_loop.py
 │   └── utils/
 │       ├── constraints.py
-│       └── metrics.py
+│       ├── data_splits.py
+│       ├── metrics.py
+│       └── seed.py
 └── tests/
     ├── test_kitnet.py
-    └── test_attacker.py
+    ├── test_attacker.py
+    ├── test_cli.py
+    └── ...
 ```
 
 ---

@@ -21,7 +21,7 @@
         "mean_l1": 16.60657501220703,
         "mean_l0_modified_features": 52.474998474121094
       },
-      "config_name": "PGD (Box, 20 steps, eps=1.0)"
+      "config_name": "PGD (Box, 20 steps, eps=1)"
     },
     {
       "num_detected_evaluated": 1000,
@@ -44,7 +44,7 @@
         "mean_l1": 31.224109649658203,
         "mean_l0_modified_features": 52.472999572753906
       },
-      "config_name": "PGD (Box, 50 steps, eps=2.0)"
+      "config_name": "PGD (Box, 50 steps, eps=2)"
     },
     {
       "num_detected_evaluated": 1000,

@@ -129,11 +129,11 @@ cdef class incStat:
 
     cdef radius(self, other_incStats):  # the radius of a set of incStats
         cdef double A
-        A = self.var()
+        A = math.pow(self.var(), 2)
         cdef incStat incSc
         for incS in other_incStats:
             incSc = incS
-            A += incSc.var()
+            A += math.pow(incSc.var(), 2)
         return math.sqrt(A)
 
     cdef magnitude(self, other_incStats):  # the magnitude of a set of incStats
@@ -216,8 +216,8 @@ cdef class incStat_cov:
     cdef double lastTimestamp_cf3
     cdef incStat incS1
     cdef incStat incS2
-    cdef extrapolator ex1
-    cdef extrapolator ex2
+    cdef double lastRes0
+    cdef double lastRes1
 
 
     def __init__(self, incStat incS1,incStat incS2, double init_time = 0):
@@ -225,14 +225,12 @@ cdef class incStat_cov:
         self.incS1 = incS1
         self.incS2 = incS2
 
-        # init extrapolators
-        self.ex1 = extrapolator()
-        self.ex2 = extrapolator()
-
-        # init sum product residuals
+        # init sum product residuals (matches the pure-Python implementation)
         self.CF3 = 0 # sum of residule products (A-uA)(B-uB)
         self.w3 = 1e-20
         self.lastTimestamp_cf3 = init_time
+        self.lastRes0 = 0
+        self.lastRes1 = 0
 
     #other_incS_decay is the decay factor of the other incstat
     # ID: the stream ID which produced (v,t)
@@ -244,24 +242,26 @@ cdef class incStat_cov:
         else:
             inc = 1
 
-        # Decay residules
-        self.processDecay(t)
-
-        # Update extrapolator for current stream AND
-        # Extrapolate other stream AND
-        # Compute and update residule
-        cdef double v_other
+        # Decay the peer stream, then the residuals (pure-Python behaviour)
         if inc == 0:
-            self.ex1.insert(t,v)
-            v_other = self.ex2.predict(t)
-            self.CF3 += (v - self.incS1.mean()) * (v_other - self.incS2.mean())
+            self.incS2.processDecay(t)
         else:
-            self.ex2.insert(t,v)
-            v_other = self.ex1.predict(t)
-            self.CF3 += (v - self.incS2.mean()) * (v_other - self.incS1.mean())
+            self.incS1.processDecay(t)
+        self.processDecay(t, inc)
+
+        # Residual product against the peer stream's last residual
+        cdef double res
+        if inc == 0:
+            res = v - self.incS1.mean()
+            self.CF3 += res * self.lastRes1
+            self.lastRes0 = res
+        else:
+            res = v - self.incS2.mean()
+            self.CF3 += res * self.lastRes0
+            self.lastRes1 = res
         self.w3 += 1
 
-    cdef processDecay(self,double t):
+    cdef processDecay(self,double t, int micro_inc_indx):
         cdef double factor
         factor = 1
         # check for decay cf3
@@ -272,6 +272,10 @@ cdef class incStat_cov:
             self.CF3 *= factor
             self.w3 *= factor
             self.lastTimestamp_cf3 = t
+            if micro_inc_indx == 0:
+                self.lastRes0 *= factor
+            else:
+                self.lastRes1 *= factor
         return factor
 
     #todo: add W3 for cf3

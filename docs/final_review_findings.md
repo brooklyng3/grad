@@ -219,7 +219,7 @@ Final repository state: `git status` unchanged except the pre-existing untracked
 | H1 checkpoint clobber | **Fixed** | Mode-specific generator/critic names; `--checkpoint_dir` added. Verified with a one-epoch temp run. |
 | H2 ignored train args | **Fixed** | `--threshold_config`, `--model_path`, `--eps`, `--seed`, `--train_epochs`, `--train_batch_size`, `--checkpoint_dir` passed through. |
 | H3 pool mix | **Fixed** | Detection applied per regime, then an actual 50/50 post-detection composition is enforced and printed. |
-| H4 tests | **Fixed** | Added `tests/test_cli.py` (CLI flags, sampler disjointness, metadata round-trip, trained checkpoint evasion, full-row smoke) and `tests/test_kitnet.py`; theta loaded from config. 36 tests pass. |
+| H4 tests | **Fixed** | Added `tests/test_cli.py` (CLI flags, sampler disjointness, metadata round-trip, trained checkpoint evasion, full-row smoke) and `tests/test_kitnet.py`; theta loaded from config. 37 tests pass. |
 | H5 holdout reuse | **Fixed** | Selection and test are disjoint halves; final ASR is on the untouched half. |
 | H6 unused config | **Fixed** | Config keys now supply CLI defaults; dead keys removed. |
 | H7 hard-coded population | **Fixed** | Read from `threshold_config.yaml` attack metadata into evaluator attributes. |
@@ -230,7 +230,7 @@ Final repository state: `git status` unchanged except the pre-existing untracked
 Verification after remediation:
 
 ```text
-pytest -q                        36 passed
+pytest -q                        37 passed
 flake8 src tests run_pipeline.py scripts    exit 0
 black --check src tests run_pipeline.py scripts   clean
 evaluate_all --samples 1000      initial RMSE 5.3381; WGAN box 1.60% / 4.1925

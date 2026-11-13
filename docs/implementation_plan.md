@@ -49,7 +49,7 @@ flowchart TD
    - This allows threshold evaluation, baseline testing, and WGAN-GP mutation batches to load tensors in milliseconds without re-running AfterImage packet-by-packet.
 2. **Model Persistence Isolation (Fact Checker Concern #3):**
    - Never serialize the outer `Kitsune` instance `K` (which contains file descriptors and `FeatureExtractor` parser states).
-   - Only serialize `K.AnomDetector` (the `KitNET` ensemble network) into `data/processed/kitsune_mirai_model.pkl`.
+   - Serialize the `KitNET` detector object (`K.AnomDetector`, including feature-map state) into `data/processed/kitsune_mirai_model.pkl`.
 3. **Execution Separation:**
    - Training: `kitnet.process(x)` updates feature mapping and autoencoder weights during grace periods.
    - Inference/Evaluation: `kitnet.execute(x)` scores reconstruction RMSE in pure forward mode without mutating weights.
@@ -96,7 +96,7 @@ flowchart TD
      - Streams `data/raw/mirai.pcap.tsv` line-by-line via `FE.get_next_vector()`.
      - Writes extracted 100D float vectors directly into memory-mapped array `data/processed/mirai_features.npy` (shape: `[764137, 100]`, `float32`).
      - Simultaneously trains `KitNET(100, maxAE=10, FMgrace=5000, ADgrace=50000)`.
-     - Saves only `K.AnomDetector` to `data/processed/kitsune_mirai_model.pkl`.
+     - Saves the `KitNET` detector object to `data/processed/kitsune_mirai_model.pkl`.
   2. *Resource Notice:* Pause and notify user before running this feature extraction pass.
 
 ---

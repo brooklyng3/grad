@@ -129,7 +129,7 @@ We evaluated FGSM, standard multi-step PGD, and Manifold Traffic-Shaping PGD on 
 
 ### 4.3. Analytical Insight
 Single-step FGSM successfully reduces the median RMSE from $1.64$ down to $0.98$. However, because Kitsune's ensemble decomposes features across 16 correlated micro-autoencoders, single-step perturbations that reduce error in one micro-AE can inadvertently increase error in another (reflected when $\epsilon$ gets too large at $5.0$). 
-This confirms the necessity of **multi-step generative modeling (WGAN-GP)** in Phase 4, which learns the joint benign manifold across all 16 micro-autoencoders simultaneously.
+This motivated **multi-step generative modeling (WGAN-GP)** in Phase 4, which learns the joint benign manifold across all 16 micro-autoencoders simultaneously. Phase 6 later showed that a single-pass envelope projection is still competitive, so "necessity" is too strong; the generator helps but is not essential.
 
 ---
 
@@ -138,4 +138,4 @@ This confirms the necessity of **multi-step generative modeling (WGAN-GP)** in P
 - `test_deepfool_attack_step`: Confirms iterative minimal projection moves samples toward boundary.
 - `test_polymorphic_generator`: Confirms `mutate_raw` respects normalized $\epsilon$ bounds.
 - `test_wgan_discriminator_and_gradient_penalty`: Confirms Critic scores shape `[B, 1]` and computes scalar $\mathcal{L}_{GP} \ge 0$.
-- **Project Test Results:** 14 / 14 tests passing at the time; 36 / 36 after Phase 6.
+- **Project Test Results:** 14 / 14 tests passing at the time; 37 / 37 after Phase 6.

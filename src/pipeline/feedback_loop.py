@@ -64,6 +64,8 @@ class AdversarialFeedbackLoop:
         eps: Optional[float] = None,
         threshold_config_path: str = "data/processed/threshold_config.yaml",
         model_path: Optional[str] = None,
+        features_path: Optional[str] = None,
+        labels_path: Optional[str] = None,
         seed: int = 42,
     ) -> None:
         with open(config_path, "r") as f:
@@ -79,6 +81,8 @@ class AdversarialFeedbackLoop:
         seed_everything(seed)
 
         # 1. Load Pre-trained Defender and Calibration Metadata
+        self.features_path = features_path or self.kit_cfg["data"]["processed_features"]
+        self.labels_path = labels_path or self.kit_cfg["data"]["raw_labels"]
         model_path = model_path or self.kit_cfg["data"]["model_weights"]
         self.defender = PyTorchKitNET.from_file(model_path, device=self.device)
         self.defender.eval()
@@ -150,8 +154,8 @@ class AdversarialFeedbackLoop:
         max_benign_samples: int = 10000,
     ) -> Dict[str, torch.Tensor]:
         """Load disjoint, representative benign and detected malicious pools."""
-        features = np.load(self.kit_cfg["data"]["processed_features"], mmap_mode="r")
-        with open(self.kit_cfg["data"]["raw_labels"], "r") as f:
+        features = np.load(self.features_path, mmap_mode="r")
+        with open(self.labels_path, "r") as f:
             labels = np.array(
                 [int(line.strip()) for line in f if line.strip()], dtype=np.int32
             )
@@ -233,9 +237,9 @@ class AdversarialFeedbackLoop:
         Selection and final test use disjoint halves so model selection does
         not consume the reported test set.
         """
-        features = np.load(self.kit_cfg["data"]["processed_features"], mmap_mode="r")
+        features = np.load(self.features_path, mmap_mode="r")
         all_attacks = np.where(labels == 1)[0]
-        eval_attacks = attack_indices_for_split(all_attacks, "eval")
+        eval_attacks = attack_indices_for_split(all_attacks, "holdout")
         start = int(len(eval_attacks) * block[0])
         end = int(len(eval_attacks) * block[1])
         candidates = self._spread(eval_attacks[start:end], max_samples * 3)
@@ -277,7 +281,7 @@ class AdversarialFeedbackLoop:
         x_benign_norm = data["x_benign_norm"]
         x_mal_norm = data["x_mal_detected_norm"]
 
-        with open(self.kit_cfg["data"]["raw_labels"], "r") as f:
+        with open(self.labels_path, "r") as f:
             labels = np.array(
                 [int(line.strip()) for line in f if line.strip()], dtype=np.int32
             )
