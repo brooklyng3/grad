@@ -186,7 +186,7 @@ The committed report and artifacts are correct; several docs are not:
 |---|---|---|
 | F1 broken Cython | **Fixed** | Ported the pure-Python residual covariance into `incStat_cov.update_cov`, squared variances in `incStat.radius`, removed the extrapolator path, rebuilt. Pure/Cython are bit-identical over 300 packets at offset 0 and 100 after a 10k warm-up; `tests/test_extractor_parity.py` asserts <1e-6 and finite output. |
 | F2 selection overlap | **Fixed** | Added the `%3 == 2` holdout partition for selection/test; published eval (`%3 == 1`) is now fully untouched. Retrained both checkpoints and regenerated reports. |
-| F3 stale docs | **Fixed** | ER values corrected to 13.26/11.85 (single draw), 13.43/11.85 (best-of-k), 15.20/11.85 (refine); manifold prose and tables set to 0.0779/0.0475; test count 36; Phase 3 necessity softened. |
+| F3 stale docs | **Fixed** | ER values corrected to 13.26/11.85 (single draw), 13.43/11.85 (best-of-k), 15.20/11.85 (refine); manifold prose and tables set to 0.0779/0.0475; test count 37; Phase 3 necessity softened. |
 | F4 label drift | **Fixed** | `--pgd_eps` added; PGD alpha derives from it; PGD and DeepFool labels are built from the actual parameters. |
 | F5 zero crashes | **Fixed** | `samples`, `batch_size`, `train_batch_size`, `retries`, `refine_steps`, and `deepfool_steps` clamp to ≥1; regression test. |
 | F6 hard-coded paths | **Fixed** | `--labels_path` added and threaded through evaluation/training; `--features_path` reaches the feedback loop; config paths can be overridden. |
